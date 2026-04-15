@@ -2,15 +2,34 @@ export function parseLogFile(fileContent) {
   const lines = fileContent.split('\n');
   const data = [];
 
-  // Matches 738M->674M(5928M) or 10.5M->2M(100M) handling different units
-  const memoryRegex = /(\d+(?:\.\d+)?)([KMGkmg]?)->(\d+(?:\.\d+)?)([KMGkmg]?)\((\d+(?:\.\d+)?)([KMGkmg]?)\)/;
+  // Shenandoah format: 738M->674M(5928M)  
+  const shenandoahRegex = /(\d+(?:\.\d+)?)([KMGkmg]?)->(\d+(?:\.\d+)?)([KMGkmg]?)\((\d+(?:\.\d+)?)([KMGkmg]?)\)/;
+  
+  // ZGC format: 2936M(18%)->2910M(18%)
+  const zgcRegex = /(\d+(?:\.\d+)?)([KMGkmg]?)\(\d*%\)->(\d+(?:\.\d+)?)([KMGkmg]?)\(\d*%\)/;
   
   // Matches first bracket group, e.g. [2026-04-15T10:27:57.630+0000] or [1.234s]
   const timeRegex = /^\[([^\]]+)\]/;
 
   lines.forEach((line) => {
-    const memoryMatch = line.match(memoryRegex);
-    if (!memoryMatch) return;
+    let beforeVal, beforeUnit, afterVal, afterUnit;
+    
+    const shenMatch = line.match(shenandoahRegex);
+    const zgcMatch = line.match(zgcRegex);
+    
+    if (shenMatch) {
+      beforeVal = parseFloat(shenMatch[1]);
+      beforeUnit = shenMatch[2].toUpperCase();
+      afterVal = parseFloat(shenMatch[3]);
+      afterUnit = shenMatch[4].toUpperCase();
+    } else if (zgcMatch) {
+      beforeVal = parseFloat(zgcMatch[1]);
+      beforeUnit = zgcMatch[2].toUpperCase();
+      afterVal = parseFloat(zgcMatch[3]);
+      afterUnit = zgcMatch[4].toUpperCase();
+    } else {
+      return; 
+    }
 
     const timeMatch = line.match(timeRegex);
     if (!timeMatch) return;
@@ -29,12 +48,6 @@ export function parseLogFile(fileContent) {
           timeLabel = d.toLocaleTimeString(); // More readable for charts
        }
     }
-
-    const beforeVal = parseFloat(memoryMatch[1]);
-    const beforeUnit = memoryMatch[2].toUpperCase();
-    
-    const afterVal = parseFloat(memoryMatch[3]);
-    const afterUnit = memoryMatch[4].toUpperCase();
 
     // Normalize to Megabytes
     const normalize = (val, unit) => {
