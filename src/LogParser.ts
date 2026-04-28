@@ -1,6 +1,14 @@
-export function parseLogFile(fileContent) {
+export interface LogData {
+  rawTime: string;
+  timeValue: string | number;
+  timeLabel: string;
+  beforeGC: number;
+  afterGC: number;
+}
+
+export function parseLogFile(fileContent: string): LogData[] {
   const lines = fileContent.split('\n');
-  const data = [];
+  const data: LogData[] = [];
 
   // Shenandoah format: 738M->674M(5928M)  
   const shenandoahRegex = /(\d+(?:\.\d+)?)([KMGkmg]?)->(\d+(?:\.\d+)?)([KMGkmg]?)\((\d+(?:\.\d+)?)([KMGkmg]?)\)/;
@@ -12,7 +20,7 @@ export function parseLogFile(fileContent) {
   const timeRegex = /^\[([^\]]+)\]/;
 
   lines.forEach((line) => {
-    let beforeVal, beforeUnit, afterVal, afterUnit;
+    let beforeVal: number, beforeUnit: string, afterVal: number, afterUnit: string;
     
     const shenMatch = line.match(shenandoahRegex);
     const zgcMatch = line.match(zgcRegex);
@@ -34,15 +42,15 @@ export function parseLogFile(fileContent) {
     const timeMatch = line.match(timeRegex);
     if (!timeMatch) return;
 
-    let timeValue = timeMatch[1];
+    let timeValue: string | number = timeMatch[1];
     let timeLabel = timeValue;
     // Check if relative time like "10.23s"
-    if (timeValue.endsWith('s') && !isNaN(parseFloat(timeValue))) {
+    if (typeof timeValue === 'string' && timeValue.endsWith('s') && !isNaN(parseFloat(timeValue))) {
        timeValue = parseFloat(timeValue);
        timeLabel = `${timeValue}s`;
     } else {
        // Try parsing as date
-       const d = new Date(timeValue);
+       const d = new Date(timeValue as string);
        if (!isNaN(d.getTime())) {
           timeValue = d.getTime();
           timeLabel = d.toLocaleTimeString(); // More readable for charts
@@ -50,7 +58,7 @@ export function parseLogFile(fileContent) {
     }
 
     // Normalize to Megabytes
-    const normalize = (val, unit) => {
+    const normalize = (val: number, unit: string) => {
       if (unit === 'K') return val / 1024;
       if (unit === 'G') return val * 1024;
       return val; // Assume M by default or no unit
