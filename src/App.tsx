@@ -1,39 +1,41 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { UploadCloud, FileText, Activity } from 'lucide-react';
+import { UploadCloud, FileText } from 'lucide-react';
 import GCChart from './GCChart';
-import { parseLogFile } from './LogParser';
+import { parseLogFile, LogData } from './LogParser';
 import './index.css';
 
 function App() {
-  const [data, setData] = useState([]);
-  const [fileName, setFileName] = useState('');
-  const [isDragging, setIsDragging] = useState(false);
-  const fileInputRef = useRef(null);
+  const [data, setData] = useState<LogData[]>([]);
+  const [fileName, setFileName] = useState<string>('');
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const processFile = (file) => {
+  const processFile = (file: File) => {
     if (!file) return;
     setFileName(file.name);
     
     const reader = new FileReader();
     reader.onload = (e) => {
-      const text = e.target.result;
-      const parsedData = parseLogFile(text);
-      setData(parsedData);
+      if (e.target?.result) {
+        const text = e.target.result as string;
+        const parsedData = parseLogFile(text);
+        setData(parsedData);
+      }
     };
     reader.readAsText(file);
   };
 
-  const handleDragOver = useCallback((e) => {
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(true);
   }, []);
 
-  const handleDragLeave = useCallback((e) => {
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
   }, []);
 
-  const handleDrop = useCallback((e) => {
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
@@ -41,7 +43,7 @@ function App() {
     }
   }, []);
 
-  const handleFileChange = (e) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       processFile(e.target.files[0]);
     }
@@ -66,7 +68,7 @@ function App() {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          onClick={() => fileInputRef.current.click()}
+          onClick={() => fileInputRef.current?.click()}
         >
           <input 
             type="file" 

@@ -9,13 +9,14 @@ import {
   Legend,
   ResponsiveContainer
 } from 'recharts';
+import { LogData } from './LogParser';
 
-const CustomTooltip = ({ active, payload, label }) => {
+const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     return (
       <div className="custom-tooltip">
         <p className="tooltip-label">{label}</p>
-        {payload.map((entry, index) => (
+        {payload.map((entry: any, index: number) => (
           <p key={`item-${index}`} style={{ color: entry.color }} className="tooltip-item">
             {entry.name}: {entry.value} MB
           </p>
@@ -26,8 +27,12 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
-export default function GCChart({ data }) {
-  const [hiddenSeries, setHiddenSeries] = useState({
+interface GCChartProps {
+  data: LogData[];
+}
+
+export default function GCChart({ data }: GCChartProps) {
+  const [hiddenSeries, setHiddenSeries] = useState<Record<string, boolean>>({
     beforeGC: false,
     afterGC: false,
   });
@@ -40,12 +45,14 @@ export default function GCChart({ data }) {
     );
   }
 
-  const handleLegendClick = (e) => {
-    const { dataKey } = e;
-    setHiddenSeries((prev) => ({
-      ...prev,
-      [dataKey]: !prev[dataKey]
-    }));
+  const handleLegendClick = (e: any) => {
+    const dataKey = e.dataKey as string;
+    if (dataKey) {
+      setHiddenSeries((prev) => ({
+        ...prev,
+        [dataKey]: !prev[dataKey]
+      }));
+    }
   };
 
   // Sample data slightly to avoid rendering thousands of points which lags standard LineChart
