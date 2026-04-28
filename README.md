@@ -1,16 +1,36 @@
-# React + Vite
+# Shenandoah GC Visualizer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Project Overview
+Shenandoah GC Visualizer is a tool designed to analyze and plot JVM memory performance in a completely local environment. It provides interactive visualizations of garbage collection events to help developers understand and optimize memory usage in Java applications.
 
-Currently, two official plugins are available:
+## App Features
+*   **Drag-and-Drop Log Uploading**: Easily upload garbage collection log files directly into the application.
+*   **Log Parsing**: Supports parsing of **Shenandoah** and **ZGC** log formats.
+*   **Interactive Charts**: Visualizes memory performance before and after GC events using Recharts.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Technology Stack
+*   **React**: A JavaScript library for building user interfaces.
+*   **Vite**: Next Generation Frontend Tooling for fast development and building.
+*   **Recharts**: A composable charting library built on React components.
+*   **Lucide React**: Beautiful and consistent icons for React.
 
-## React Compiler
+## Getting Started
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+To run this project locally, follow these steps:
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+1.  **Install dependencies:**
+    ```bash
+    npm ci
+    ```
+2.  **Start the development server:**
+    ```bash
+    npm run dev
+    ```
+3.  **Build for production:**
+    ```bash
+    npm run build
+    ```
+4.  **Lint the code:**
+    ```bash
+    npm run lint
+    ```
