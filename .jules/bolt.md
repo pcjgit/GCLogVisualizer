@@ -1,0 +1,3 @@
+## 2026-04-29 - [Avoid spread operator on massive log arrays]
+**Learning:** Using `Math.max(...array)` on arrays built from parsed GC log files in this application is an anti-pattern. Because the user provides the GC log, the number of data points can easily exceed V8's call stack limit (usually ~100k-125k items), leading to a hard crash (`RangeError: Maximum call stack size exceeded`).
+**Action:** When calculating statistics or bounds over parsed log data arrays, always use standard loops (like a `for` loop or `Array.prototype.reduce`) instead of the spread operator to ensure stability regardless of the uploaded log size.
