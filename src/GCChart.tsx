@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   ComposedChart,
   Line,
@@ -39,14 +39,6 @@ export default function GCChart({ data }: GCChartProps) {
     reachingSafepointTime: false,
   });
 
-  if (!data || data.length === 0) {
-    return (
-      <div className="chart-container">
-        <div className="chart-empty">No data available to plot. Upload a file above.</div>
-      </div>
-    );
-  }
-
   const handleLegendClick = (e: any) => {
     const dataKey = e.dataKey as string;
     if (dataKey) {
@@ -58,7 +50,26 @@ export default function GCChart({ data }: GCChartProps) {
   };
 
   // Sample data slightly to avoid rendering thousands of points which lags standard LineChart
-  const downsampledData = data.filter((_, i) => data.length > 2000 ? i % Math.ceil(data.length / 2000) === 0 : true);
+  // Optimization: Memoize and use an O(K) loop instead of O(N) filter.
+  const downsampledData = useMemo(() => {
+    if (!data) return [];
+    if (data.length <= 2000) return data;
+
+    const result = [];
+    const step = Math.ceil(data.length / 2000);
+    for (let i = 0; i < data.length; i += step) {
+      result.push(data[i]);
+    }
+    return result;
+  }, [data]);
+
+  if (!data || data.length === 0) {
+    return (
+      <div className="chart-container">
+        <div className="chart-empty">No data available to plot. Upload a file above.</div>
+      </div>
+    );
+  }
 
   return (
     <div className="chart-container">
