@@ -64,9 +64,11 @@ function App() {
 
     for (let i = 0; i < data.length; i++) {
       const d = data[i];
-      if (d.beforeGC > maxBefore) maxBefore = d.beforeGC;
-      if (d.afterGC > maxAfter) maxAfter = d.afterGC;
-      totalRecovered += (d.beforeGC - d.afterGC);
+      if (d.beforeGC !== undefined && d.beforeGC > maxBefore) maxBefore = d.beforeGC;
+      if (d.afterGC !== undefined && d.afterGC > maxAfter) maxAfter = d.afterGC;
+      if (d.beforeGC !== undefined && d.afterGC !== undefined) {
+        totalRecovered += (d.beforeGC - d.afterGC);
+      }
     }
 
     return {

@@ -2,8 +2,9 @@ export interface LogData {
   rawTime: string;
   timeValue: string | number;
   timeLabel: string;
-  beforeGC: number;
-  afterGC: number;
+  beforeGC?: number;
+  afterGC?: number;
+  reachingSafepointTime?: number; // time in ms
 }
 
 export function parseLogFile(fileContent: string): LogData[] {
@@ -16,14 +17,19 @@ export function parseLogFile(fileContent: string): LogData[] {
   // ZGC format: 2936M(18%)->2910M(18%)
   const zgcRegex = /(\d+(?:\.\d+)?)([KMGkmg]?)\(\d*%\)->(\d+(?:\.\d+)?)([KMGkmg]?)\(\d*%\)/;
   
+  // Safepoint format: Reaching safepoint: 222321200 ns
+  const safepointRegex = /Reaching safepoint: (\d+) ns/;
+
   // Matches first bracket group, e.g. [2026-04-15T10:27:57.630+0000] or [1.234s]
   const timeRegex = /^\[([^\]]+)\]/;
 
   lines.forEach((line) => {
-    let beforeVal: number, beforeUnit: string, afterVal: number, afterUnit: string;
+    let beforeVal: number | undefined, beforeUnit: string | undefined, afterVal: number | undefined, afterUnit: string | undefined;
+    let reachingSafepointNs: number | undefined;
     
     const shenMatch = line.match(shenandoahRegex);
     const zgcMatch = line.match(zgcRegex);
+    const spMatch = line.match(safepointRegex);
     
     if (shenMatch) {
       beforeVal = parseFloat(shenMatch[1]);
@@ -35,6 +41,8 @@ export function parseLogFile(fileContent: string): LogData[] {
       beforeUnit = zgcMatch[2].toUpperCase();
       afterVal = parseFloat(zgcMatch[3]);
       afterUnit = zgcMatch[4].toUpperCase();
+    } else if (spMatch) {
+      reachingSafepointNs = parseFloat(spMatch[1]);
     } else {
       return; 
     }
@@ -58,7 +66,8 @@ export function parseLogFile(fileContent: string): LogData[] {
     }
 
     // Normalize to Megabytes
-    const normalize = (val: number, unit: string) => {
+    const normalize = (val: number | undefined, unit: string | undefined) => {
+      if (val === undefined || unit === undefined) return undefined;
       if (unit === 'K') return val / 1024;
       if (unit === 'G') return val * 1024;
       return val; // Assume M by default or no unit
@@ -67,13 +76,23 @@ export function parseLogFile(fileContent: string): LogData[] {
     const beforeMB = normalize(beforeVal, beforeUnit);
     const afterMB = normalize(afterVal, afterUnit);
 
-    data.push({
+    const logEntry: LogData = {
       rawTime: timeMatch[1],
       timeValue,
       timeLabel,
-      beforeGC: parseFloat(beforeMB.toFixed(2)),
-      afterGC: parseFloat(afterMB.toFixed(2))
-    });
+    };
+
+    if (beforeMB !== undefined && afterMB !== undefined) {
+      logEntry.beforeGC = parseFloat(beforeMB.toFixed(2));
+      logEntry.afterGC = parseFloat(afterMB.toFixed(2));
+    }
+
+    if (reachingSafepointNs !== undefined) {
+      // Convert nanoseconds to milliseconds
+      logEntry.reachingSafepointTime = parseFloat((reachingSafepointNs / 1_000_000).toFixed(4));
+    }
+
+    data.push(logEntry);
   });
 
   return data;
