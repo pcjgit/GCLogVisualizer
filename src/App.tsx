@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { UploadCloud, FileText } from 'lucide-react';
 import GCChart from './GCChart';
 import { parseLogFile, LogData } from './LogParser';
@@ -49,11 +49,32 @@ function App() {
     }
   };
 
-  const maxMemoryBefore = data.length > 0 ? Math.max(...data.map(d => d.beforeGC)) : 0;
-  const maxMemoryAfter = data.length > 0 ? Math.max(...data.map(d => d.afterGC)) : 0;
-  const avgRecovered = data.length > 0 
-    ? (data.reduce((acc, d) => acc + (d.beforeGC - d.afterGC), 0) / data.length).toFixed(2)
-    : 0;
+  // Optimize statistics calculation:
+  // 1. Memoize to prevent recalculation on every render (e.g. when dragging)
+  // 2. Use a single loop to avoid multiple array allocations and O(N) passes
+  // 3. Avoid Math.max(...array) to prevent Maximum Call Stack Size Exceeded errors on large logs
+  const { maxMemoryBefore, maxMemoryAfter, avgRecovered } = useMemo(() => {
+    if (data.length === 0) {
+      return { maxMemoryBefore: 0, maxMemoryAfter: 0, avgRecovered: 0 };
+    }
+
+    let maxBefore = 0;
+    let maxAfter = 0;
+    let totalRecovered = 0;
+
+    for (let i = 0; i < data.length; i++) {
+      const d = data[i];
+      if (d.beforeGC > maxBefore) maxBefore = d.beforeGC;
+      if (d.afterGC > maxAfter) maxAfter = d.afterGC;
+      totalRecovered += (d.beforeGC - d.afterGC);
+    }
+
+    return {
+      maxMemoryBefore: maxBefore,
+      maxMemoryAfter: maxAfter,
+      avgRecovered: (totalRecovered / data.length).toFixed(2)
+    };
+  }, [data]);
 
   return (
     <div className="app-container">
