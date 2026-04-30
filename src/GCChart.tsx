@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import {
-  LineChart,
+  ComposedChart,
   Line,
+  Scatter,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -18,7 +19,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         <p className="tooltip-label">{label}</p>
         {payload.map((entry: any, index: number) => (
           <p key={`item-${index}`} style={{ color: entry.color }} className="tooltip-item">
-            {entry.name}: {entry.value} MB
+            {entry.name}: {entry.value} {entry.name === 'Safepoint Time' ? 'ms' : 'MB'}
           </p>
         ))}
       </div>
@@ -35,6 +36,7 @@ export default function GCChart({ data }: GCChartProps) {
   const [hiddenSeries, setHiddenSeries] = useState<Record<string, boolean>>({
     beforeGC: false,
     afterGC: false,
+    reachingSafepointTime: false,
   });
 
   if (!data || data.length === 0) {
@@ -61,7 +63,7 @@ export default function GCChart({ data }: GCChartProps) {
   return (
     <div className="chart-container">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={downsampledData} margin={{ top: 10, right: 30, left: 20, bottom: 30 }}>
+        <ComposedChart data={downsampledData} margin={{ top: 10, right: 30, left: 20, bottom: 30 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
           
           <XAxis 
@@ -73,10 +75,20 @@ export default function GCChart({ data }: GCChartProps) {
           />
           
           <YAxis 
+            yAxisId="left"
             stroke="#94a3b8" 
             tick={{ fill: '#94a3b8', fontSize: 12 }}
             tickFormatter={(val) => `${val}M`}
             dx={-10}
+          />
+
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            stroke="#94a3b8"
+            tick={{ fill: '#94a3b8', fontSize: 12 }}
+            tickFormatter={(val) => `${val}ms`}
+            dx={10}
           />
           
           <Tooltip content={<CustomTooltip />} />
@@ -87,27 +99,39 @@ export default function GCChart({ data }: GCChartProps) {
           />
           
           <Line 
+            yAxisId="left"
             type="monotone" 
             dataKey="beforeGC" 
             name="Before GC" 
             stroke="var(--red-color)" 
             strokeWidth={2}
             dot={false}
+            connectNulls={true}
             hide={hiddenSeries.beforeGC}
             activeDot={{ r: 6, fill: "var(--red-color)", stroke: "var(--bg-surface)", strokeWidth: 2 }}
           />
           
           <Line 
+            yAxisId="left"
             type="monotone" 
             dataKey="afterGC" 
             name="After GC" 
             stroke="var(--green-color)" 
             strokeWidth={2}
             dot={false}
+            connectNulls={true}
             hide={hiddenSeries.afterGC}
             activeDot={{ r: 6, fill: "var(--green-color)", stroke: "var(--bg-surface)", strokeWidth: 2 }}
           />
-        </LineChart>
+
+          <Scatter
+            yAxisId="right"
+            dataKey="reachingSafepointTime"
+            name="Safepoint Time"
+            fill="#eab308"
+            hide={hiddenSeries.reachingSafepointTime}
+          />
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );
