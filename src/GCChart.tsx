@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   ComposedChart,
   Line,
@@ -30,22 +30,15 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 interface GCChartProps {
   data: LogData[];
+  isDownsampled?: boolean;
 }
 
-export default function GCChart({ data }: GCChartProps) {
+export default function GCChart({ data, isDownsampled = false }: GCChartProps) {
   const [hiddenSeries, setHiddenSeries] = useState<Record<string, boolean>>({
     beforeGC: false,
     afterGC: false,
     reachingSafepointTime: false,
   });
-
-  if (!data || data.length === 0) {
-    return (
-      <div className="chart-container">
-        <div className="chart-empty">No data available to plot. Upload a file above.</div>
-      </div>
-    );
-  }
 
   const handleLegendClick = (e: any) => {
     const dataKey = e.dataKey as string;
@@ -58,12 +51,31 @@ export default function GCChart({ data }: GCChartProps) {
   };
 
   // Sample data slightly to avoid rendering thousands of points which lags standard LineChart
-  const downsampledData = data.filter((_, i) => data.length > 2000 ? i % Math.ceil(data.length / 2000) === 0 : true);
+  // Optimization: Memoize and use an O(K) loop instead of O(N) filter.
+  const chartData = useMemo(() => {
+    if (!data) return [];
+    if (!isDownsampled || data.length <= 2000) return data;
+
+    const result = [];
+    const step = Math.ceil(data.length / 2000);
+    for (let i = 0; i < data.length; i += step) {
+      result.push(data[i]);
+    }
+    return result;
+  }, [data, isDownsampled]);
+
+  if (!data || data.length === 0) {
+    return (
+      <div className="chart-container">
+        <div className="chart-empty">No data available to plot. Upload a file above.</div>
+      </div>
+    );
+  }
 
   return (
     <div className="chart-container">
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={downsampledData} margin={{ top: 10, right: 30, left: 20, bottom: 30 }}>
+        <ComposedChart data={chartData} margin={{ top: 10, right: 30, left: 20, bottom: 30 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
           
           <XAxis 

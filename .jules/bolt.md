@@ -1,3 +1,6 @@
 ## 2026-04-29 - [Avoid spread operator on massive log arrays]
 **Learning:** Using `Math.max(...array)` on arrays built from parsed GC log files in this application is an anti-pattern. Because the user provides the GC log, the number of data points can easily exceed V8's call stack limit (usually ~100k-125k items), leading to a hard crash (`RangeError: Maximum call stack size exceeded`).
 **Action:** When calculating statistics or bounds over parsed log data arrays, always use standard loops (like a `for` loop or `Array.prototype.reduce`) instead of the spread operator to ensure stability regardless of the uploaded log size.
+## 2025-05-01 - [O(N) vs O(K) in array downsampling]
+**Learning:** Found a significant UI bottleneck where downsampling logic for the chart was recalculating on every component render using a slow `.filter` on potentially very large arrays (GC logs can be hundreds of thousands of lines).
+**Action:** Always wrap expensive data transformations in React with `useMemo`. When downsampling an array by taking every Nth element, use a `for` loop that skips elements (`i += step`) instead of `filter`, reducing time complexity from O(N) to O(K) (where K is the target array length, which is ~30-100x faster).

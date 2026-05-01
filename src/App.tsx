@@ -8,6 +8,7 @@ function App() {
   const [data, setData] = useState<LogData[]>([]);
   const [fileName, setFileName] = useState<string>('');
   const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [isDownsampled, setIsDownsampled] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const processFile = (file: File) => {
@@ -115,7 +116,18 @@ function App() {
           )}
         </div>
 
-        <GCChart data={data} />
+        <div className="controls-row">
+          <label className="toggle-label">
+            <input
+              type="checkbox"
+              checked={isDownsampled}
+              onChange={(e) => setIsDownsampled(e.target.checked)}
+            />
+            Enable Data Downsampling (Faster Rendering)
+          </label>
+        </div>
+
+        <GCChart data={data} isDownsampled={isDownsampled} />
 
         {data.length > 0 && (
           <div className="stats-grid">
