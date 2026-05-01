@@ -6,7 +6,7 @@ Shenandoah GC Visualizer is a tool designed to analyze and plot JVM memory perfo
 ## App Features
 *   **Drag-and-Drop Log Uploading**: Easily upload garbage collection log files directly into the application.
 *   **Log Parsing**: Supports parsing of **Shenandoah** and **ZGC** log formats.
-*   **Interactive Charts**: Visualizes memory performance before and after GC events, and displays a scatter plot of **Reaching Safepoint** times using Recharts.
+*   **Interactive Charts**: Visualizes memory performance before and after GC events, and provides a dedicated scatter plot of **Reaching Safepoint** times using Recharts.
 
 ## Technology Stack
 *   **React**: A JavaScript library for building user interfaces.
