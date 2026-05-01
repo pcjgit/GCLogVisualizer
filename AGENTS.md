@@ -8,7 +8,7 @@ This file contains important context about the "Shenandoah GC Visualizer" projec
 
 ## Development Guidelines
 *   **Large arrays optimization**: Avoid using the spread operator with large arrays (e.g., `Math.max(...array)`) when processing GC log data. The large volume of log entries can easily exceed V8's maximum call stack size, resulting in a `RangeError`. Use single-pass loops or `reduce` instead.
-*   **Data Visualization & Recharts**: When rendering time-series data with sparse or interleaved metrics in Recharts (such as mixed GC memory events and Safepoint times), ensure `<Line>` components use the `connectNulls={true}` prop to maintain continuous lines across data points with `undefined` values.
+*   **Data Visualization & Recharts**: When rendering time-series data with sparse or interleaved metrics in Recharts (such as mixed GC memory events), ensure `<Line>` components use the `connectNulls={true}` prop to maintain continuous lines across data points with `undefined` values. Note that Safepoint times are now rendered in a separate dedicated chart.
 
 ## Standard Execution Commands
 When working on this project, please use the following commands:

@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { UploadCloud, FileText } from 'lucide-react';
 import GCChart from './GCChart';
+import SafepointChart from './SafepointChart';
 import { parseLogFile, LogData } from './LogParser';
 import './index.css';
 
@@ -128,6 +129,10 @@ function App() {
         </div>
 
         <GCChart data={data} isDownsampled={isDownsampled} />
+
+        {data.length > 0 && (
+          <SafepointChart data={data} isDownsampled={isDownsampled} />
+        )}
 
         {data.length > 0 && (
           <div className="stats-grid">
