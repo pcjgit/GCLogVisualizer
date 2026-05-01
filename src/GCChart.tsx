@@ -30,9 +30,10 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 interface GCChartProps {
   data: LogData[];
+  isDownsampled?: boolean;
 }
 
-export default function GCChart({ data }: GCChartProps) {
+export default function GCChart({ data, isDownsampled = false }: GCChartProps) {
   const [hiddenSeries, setHiddenSeries] = useState<Record<string, boolean>>({
     beforeGC: false,
     afterGC: false,
@@ -51,9 +52,9 @@ export default function GCChart({ data }: GCChartProps) {
 
   // Sample data slightly to avoid rendering thousands of points which lags standard LineChart
   // Optimization: Memoize and use an O(K) loop instead of O(N) filter.
-  const downsampledData = useMemo(() => {
+  const chartData = useMemo(() => {
     if (!data) return [];
-    if (data.length <= 2000) return data;
+    if (!isDownsampled || data.length <= 2000) return data;
 
     const result = [];
     const step = Math.ceil(data.length / 2000);
@@ -61,7 +62,7 @@ export default function GCChart({ data }: GCChartProps) {
       result.push(data[i]);
     }
     return result;
-  }, [data]);
+  }, [data, isDownsampled]);
 
   if (!data || data.length === 0) {
     return (
@@ -74,7 +75,7 @@ export default function GCChart({ data }: GCChartProps) {
   return (
     <div className="chart-container">
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={downsampledData} margin={{ top: 10, right: 30, left: 20, bottom: 30 }}>
+        <ComposedChart data={chartData} margin={{ top: 10, right: 30, left: 20, bottom: 30 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
           
           <XAxis 
