@@ -20,45 +20,64 @@ export function parseLogFile(fileContent: string): LogData[] {
   // Safepoint format: Reaching safepoint: 222321200 ns
   const safepointRegex = /Reaching safepoint: (\d+) ns/;
 
-  // Matches first bracket group, e.g. [2026-04-15T10:27:57.630+0000] or [1.234s]
-  const timeRegex = /^\[([^\]]+)\]/;
-
-  lines.forEach((line) => {
+  // Optimization: Use standard for-loop and early string filtering
+  // to avoid running regexes on every log line, reducing parsing time.
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     let beforeVal: number | undefined, beforeUnit: string | undefined, afterVal: number | undefined, afterUnit: string | undefined;
     let reachingSafepointNs: number | undefined;
     
-    const shenMatch = line.match(shenandoahRegex);
-    const zgcMatch = line.match(zgcRegex);
-    const spMatch = line.match(safepointRegex);
+    const isGC = line.includes('->');
+    const isSafepoint = !isGC && line.includes('Reaching safepoint:');
     
-    if (shenMatch) {
-      beforeVal = parseFloat(shenMatch[1]);
-      beforeUnit = shenMatch[2].toUpperCase();
-      afterVal = parseFloat(shenMatch[3]);
-      afterUnit = shenMatch[4].toUpperCase();
-    } else if (zgcMatch) {
-      beforeVal = parseFloat(zgcMatch[1]);
-      beforeUnit = zgcMatch[2].toUpperCase();
-      afterVal = parseFloat(zgcMatch[3]);
-      afterUnit = zgcMatch[4].toUpperCase();
-    } else if (spMatch) {
-      reachingSafepointNs = parseFloat(spMatch[1]);
-    } else {
-      return; 
+    if (!isGC && !isSafepoint) {
+      continue;
     }
 
-    const timeMatch = line.match(timeRegex);
-    if (!timeMatch) return;
+    const firstBracketIndex = line.indexOf('[');
+    const closingBracketIndex = line.indexOf(']', firstBracketIndex);
+    if (firstBracketIndex === -1 || closingBracketIndex === -1) {
+      continue;
+    }
 
-    let timeValue: string | number = timeMatch[1];
-    let timeLabel = timeValue;
+    if (isGC) {
+      const shenMatch = line.match(shenandoahRegex);
+      if (shenMatch) {
+        beforeVal = parseFloat(shenMatch[1]);
+        beforeUnit = shenMatch[2].toUpperCase();
+        afterVal = parseFloat(shenMatch[3]);
+        afterUnit = shenMatch[4].toUpperCase();
+      } else {
+        const zgcMatch = line.match(zgcRegex);
+        if (zgcMatch) {
+          beforeVal = parseFloat(zgcMatch[1]);
+          beforeUnit = zgcMatch[2].toUpperCase();
+          afterVal = parseFloat(zgcMatch[3]);
+          afterUnit = zgcMatch[4].toUpperCase();
+        } else {
+          continue;
+        }
+      }
+    } else {
+      const spMatch = line.match(safepointRegex);
+      if (spMatch) {
+        reachingSafepointNs = parseFloat(spMatch[1]);
+      } else {
+        continue;
+      }
+    }
+
+    const timeStr = line.substring(firstBracketIndex + 1, closingBracketIndex);
+    let timeValue: string | number = timeStr;
+    let timeLabel = timeStr;
+
     // Check if relative time like "10.23s"
-    if (typeof timeValue === 'string' && timeValue.endsWith('s') && !isNaN(parseFloat(timeValue))) {
+    if (timeValue.endsWith('s') && !isNaN(parseFloat(timeValue))) {
        timeValue = parseFloat(timeValue);
        timeLabel = `${timeValue}s`;
     } else {
        // Try parsing as date
-       const d = new Date(timeValue as string);
+       const d = new Date(timeValue);
        if (!isNaN(d.getTime())) {
           timeValue = d.getTime();
           timeLabel = d.toLocaleTimeString(); // More readable for charts
@@ -77,7 +96,7 @@ export function parseLogFile(fileContent: string): LogData[] {
     const afterMB = normalize(afterVal, afterUnit);
 
     const logEntry: LogData = {
-      rawTime: timeMatch[1],
+      rawTime: timeStr,
       timeValue,
       timeLabel,
     };
@@ -93,7 +112,7 @@ export function parseLogFile(fileContent: string): LogData[] {
     }
 
     data.push(logEntry);
-  });
+  }
 
   return data;
 }
