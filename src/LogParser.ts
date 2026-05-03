@@ -77,10 +77,17 @@ export function parseLogFile(fileContent: string): LogData[] {
        timeLabel = `${timeValue}s`;
     } else {
        // Try parsing as date
-       const d = new Date(timeValue);
-       if (!isNaN(d.getTime())) {
-          timeValue = d.getTime();
-          timeLabel = d.toLocaleTimeString(); // More readable for charts
+       // Optimization: Use Date.parse to avoid allocating Invalid Date objects for non-date strings
+       const parsedTime = Date.parse(timeValue);
+       if (!isNaN(parsedTime)) {
+          timeValue = parsedTime;
+          const d = new Date(parsedTime);
+
+          // Optimization: Avoid slow toLocaleTimeString in massive loop
+          const h = d.getHours();
+          const m = d.getMinutes();
+          const s = d.getSeconds();
+          timeLabel = `${h < 10 ? '0' + h : h}:${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
        }
     }
 
@@ -102,13 +109,14 @@ export function parseLogFile(fileContent: string): LogData[] {
     };
 
     if (beforeMB !== undefined && afterMB !== undefined) {
-      logEntry.beforeGC = parseFloat(beforeMB.toFixed(2));
-      logEntry.afterGC = parseFloat(afterMB.toFixed(2));
+      // Optimization: Math.round avoids expensive string allocations of toFixed/parseFloat
+      logEntry.beforeGC = Math.round(beforeMB * 100) / 100;
+      logEntry.afterGC = Math.round(afterMB * 100) / 100;
     }
 
     if (reachingSafepointNs !== undefined) {
       // Convert nanoseconds to milliseconds
-      logEntry.reachingSafepointTime = parseFloat((reachingSafepointNs / 1_000_000).toFixed(4));
+      logEntry.reachingSafepointTime = Math.round(reachingSafepointNs / 100) / 10000;
     }
 
     data.push(logEntry);
