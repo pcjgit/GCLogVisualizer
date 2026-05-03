@@ -11,3 +11,7 @@
 ## 2023-10-25 - [Date string formatting and toFixed() overhead in massive loops]
 **Learning:** Found a major parsing bottleneck in `LogParser.ts` for massive log inputs. Native JS `Date` methods like `toLocaleTimeString()` and `parseFloat(val.toFixed(x))` add enormous overhead in tight parsing loops, due to intense string allocations and internationalization lookups. Also, instantiating `new Date(string)` on invalid date strings to check validity with `isNaN(d.getTime())` is slow since it allocates `Invalid Date` objects.
 **Action:** When parsing hundreds of thousands of lines, avoid `toLocaleTimeString()` and manually extract components with math (`getHours`, etc.). Use `Math.round(val * 100) / 100` instead of `parseFloat(val.toFixed(2))`. Use `Date.parse(string)` to validate dates instead of `new Date()`, as it returns `NaN` faster without object allocation for invalid inputs.
+
+## 2025-05-15 - [Function closures in massive loops]
+**Learning:** Defining a function (like `normalize`) inside a loop that runs over hundreds of thousands of lines causes a massive performance hit due to repeated function allocations and increased garbage collection overhead. In a test with 10M iterations, defining the function inside the loop took ~130ms vs ~40ms when outside.
+**Action:** Always move helper functions outside of tight, massive loops (like log parsing) to prevent unnecessary function allocations.

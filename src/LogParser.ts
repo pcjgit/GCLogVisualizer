@@ -20,6 +20,15 @@ export function parseLogFile(fileContent: string): LogData[] {
   // Safepoint format: Reaching safepoint: 222321200 ns
   const safepointRegex = /Reaching safepoint: (\d+) ns/;
 
+  // Normalize to Megabytes
+  // Optimization: Moved outside the loop to prevent millions of function allocations
+  const normalize = (val: number | undefined, unit: string | undefined) => {
+    if (val === undefined || unit === undefined) return undefined;
+    if (unit === 'K') return val / 1024;
+    if (unit === 'G') return val * 1024;
+    return val; // Assume M by default or no unit
+  };
+
   // Optimization: Use standard for-loop and early string filtering
   // to avoid running regexes on every log line, reducing parsing time.
   for (let i = 0; i < lines.length; i++) {
@@ -90,14 +99,6 @@ export function parseLogFile(fileContent: string): LogData[] {
           timeLabel = `${h < 10 ? '0' + h : h}:${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
        }
     }
-
-    // Normalize to Megabytes
-    const normalize = (val: number | undefined, unit: string | undefined) => {
-      if (val === undefined || unit === undefined) return undefined;
-      if (unit === 'K') return val / 1024;
-      if (unit === 'G') return val * 1024;
-      return val; // Assume M by default or no unit
-    };
 
     const beforeMB = normalize(beforeVal, beforeUnit);
     const afterMB = normalize(afterVal, afterUnit);
