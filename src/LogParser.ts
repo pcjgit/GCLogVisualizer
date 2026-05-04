@@ -7,6 +7,15 @@ export interface LogData {
   reachingSafepointTime?: number; // time in ms
 }
 
+// Optimization: Move closure outside of massive parsing loop
+// to prevent repeated function allocations and excessive GC overhead
+const normalize = (val: number | undefined, unit: string | undefined) => {
+  if (val === undefined || unit === undefined) return undefined;
+  if (unit === 'K') return val / 1024;
+  if (unit === 'G') return val * 1024;
+  return val; // Assume M by default or no unit
+};
+
 export function parseLogFile(fileContent: string): LogData[] {
   const lines = fileContent.split('\n');
   const data: LogData[] = [];
@@ -90,14 +99,6 @@ export function parseLogFile(fileContent: string): LogData[] {
           timeLabel = `${h < 10 ? '0' + h : h}:${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
        }
     }
-
-    // Normalize to Megabytes
-    const normalize = (val: number | undefined, unit: string | undefined) => {
-      if (val === undefined || unit === undefined) return undefined;
-      if (unit === 'K') return val / 1024;
-      if (unit === 'G') return val * 1024;
-      return val; // Assume M by default or no unit
-    };
 
     const beforeMB = normalize(beforeVal, beforeUnit);
     const afterMB = normalize(afterVal, afterUnit);

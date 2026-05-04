@@ -32,7 +32,7 @@ interface SafepointChartProps {
   isDownsampled?: boolean;
 }
 
-export default function SafepointChart({ data, isDownsampled = false }: SafepointChartProps) {
+const SafepointChart = ({ data, isDownsampled = false }: SafepointChartProps) => {
   const [hiddenSeries, setHiddenSeries] = useState<Record<string, boolean>>({
     reachingSafepointTime: false,
   });
@@ -103,4 +103,8 @@ export default function SafepointChart({ data, isDownsampled = false }: Safepoin
       </ResponsiveContainer>
     </div>
   );
-}
+};
+
+// Optimization: Memoize the chart component to prevent expensive re-renders
+// when parent App state changes (e.g. during drag-and-drop 'isDragging' toggles)
+export default React.memo(SafepointChart);
