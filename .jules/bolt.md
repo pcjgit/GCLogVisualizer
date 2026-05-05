@@ -15,3 +15,6 @@
 ## 2025-05-15 - [Function closures in massive loops]
 **Learning:** Defining a function (like `normalize`) inside a loop that runs over hundreds of thousands of lines causes a massive performance hit due to repeated function allocations and increased garbage collection overhead. In a test with 10M iterations, defining the function inside the loop took ~130ms vs ~40ms when outside.
 **Action:** Always move helper functions outside of tight, massive loops (like log parsing) to prevent unnecessary function allocations.
+## 2024-05-04 - [Function allocation overhead in massive parsing loops]
+**Learning:** Found a major parsing bottleneck in `LogParser.ts` for massive log inputs. The `normalize` closure was defined inside a `for` loop executing hundreds of thousands of times. Defining functions inside massive loops forces repeated function allocations and triggers excessive garbage collection, degrading performance drastically on heavy files.
+**Action:** Always move helper function definitions (like `normalize`) outside of tight, massive loops (e.g. at the file level or outside the parsing function) to avoid unnecessary allocations and GC pauses.

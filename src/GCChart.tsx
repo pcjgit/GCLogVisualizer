@@ -32,7 +32,7 @@ interface GCChartProps {
   isDownsampled?: boolean;
 }
 
-export default function GCChart({ data, isDownsampled = false }: GCChartProps) {
+const GCChart = ({ data, isDownsampled = false }: GCChartProps) => {
   const [hiddenSeries, setHiddenSeries] = useState<Record<string, boolean>>({
     beforeGC: false,
     afterGC: false,
@@ -125,5 +125,9 @@ export default function GCChart({ data, isDownsampled = false }: GCChartProps) {
       </ResponsiveContainer>
     </div>
   );
-}
+};
+
+// Optimization: Memoize the chart component to prevent expensive re-renders
+// when parent App state changes (e.g. during drag-and-drop 'isDragging' toggles)
+export default React.memo(GCChart);
 
