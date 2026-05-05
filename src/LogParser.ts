@@ -29,6 +29,11 @@ export function parseLogFile(fileContent: string): LogData[] {
   // Safepoint format: Reaching safepoint: 222321200 ns
   const safepointRegex = /Reaching safepoint: (\d+) ns/;
 
+  // Optimization: Reuse a single Date object across the massive parsing loop
+  // to prevent allocating hundreds of thousands of Date instances, which
+  // causes significant garbage collection overhead and blocks the main thread.
+  const reusableDate = new Date();
+
   // Optimization: Use standard for-loop and early string filtering
   // to avoid running regexes on every log line, reducing parsing time.
   for (let i = 0; i < lines.length; i++) {
@@ -80,24 +85,26 @@ export function parseLogFile(fileContent: string): LogData[] {
     let timeValue: string | number = timeStr;
     let timeLabel = timeStr;
 
-    // Check if relative time like "10.23s"
-    if (timeValue.endsWith('s') && !isNaN(parseFloat(timeValue))) {
-       timeValue = parseFloat(timeValue);
-       timeLabel = `${timeValue}s`;
-    } else {
-       // Try parsing as date
-       // Optimization: Use Date.parse to avoid allocating Invalid Date objects for non-date strings
-       const parsedTime = Date.parse(timeValue);
-       if (!isNaN(parsedTime)) {
-          timeValue = parsedTime;
-          const d = new Date(parsedTime);
+    if (typeof timeValue === 'string') {
+      // Check if relative time like "10.23s"
+      if (timeValue.endsWith('s') && !isNaN(parseFloat(timeValue))) {
+         timeValue = parseFloat(timeValue);
+         timeLabel = `${timeValue}s`;
+      } else {
+         // Try parsing as date
+         // Optimization: Use Date.parse to avoid allocating Invalid Date objects for non-date strings
+         const parsedTime = Date.parse(timeValue);
+         if (!isNaN(parsedTime)) {
+            timeValue = parsedTime;
+            reusableDate.setTime(parsedTime);
 
-          // Optimization: Avoid slow toLocaleTimeString in massive loop
-          const h = d.getHours();
-          const m = d.getMinutes();
-          const s = d.getSeconds();
-          timeLabel = `${h < 10 ? '0' + h : h}:${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
-       }
+            // Optimization: Avoid slow toLocaleTimeString in massive loop
+            const h = reusableDate.getHours();
+            const m = reusableDate.getMinutes();
+            const s = reusableDate.getSeconds();
+            timeLabel = `${h < 10 ? '0' + h : h}:${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
+         }
+      }
     }
 
     const beforeMB = normalize(beforeVal, beforeUnit);
