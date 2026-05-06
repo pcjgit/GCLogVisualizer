@@ -34,6 +34,13 @@ export function parseLogFile(fileContent: string): LogData[] {
   // causes significant garbage collection overhead and blocks the main thread.
   const reusableDate = new Date();
 
+  // Optimization: Cache the last parsed timestamp
+  // GC logs often contain many consecutive lines with the exact same timestamp.
+  // Caching the last parsed time avoids expensive Date.parse() and string formatting calls.
+  let lastTimeStr = "";
+  let lastTimeValue: string | number = "";
+  let lastTimeLabel = "";
+
   // Optimization: Use standard for-loop and early string filtering
   // to avoid running regexes on every log line, reducing parsing time.
   for (let i = 0; i < lines.length; i++) {
@@ -85,7 +92,10 @@ export function parseLogFile(fileContent: string): LogData[] {
     let timeValue: string | number = timeStr;
     let timeLabel = timeStr;
 
-    if (typeof timeValue === 'string') {
+    if (timeStr === lastTimeStr) {
+      timeValue = lastTimeValue;
+      timeLabel = lastTimeLabel;
+    } else if (typeof timeValue === 'string') {
       // Check if relative time like "10.23s"
       if (timeValue.endsWith('s') && !isNaN(parseFloat(timeValue))) {
          timeValue = parseFloat(timeValue);
@@ -105,6 +115,11 @@ export function parseLogFile(fileContent: string): LogData[] {
             timeLabel = `${h < 10 ? '0' + h : h}:${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
          }
       }
+
+      // Update cache
+      lastTimeStr = timeStr;
+      lastTimeValue = timeValue;
+      lastTimeLabel = timeLabel;
     }
 
     const beforeMB = normalize(beforeVal, beforeUnit);
