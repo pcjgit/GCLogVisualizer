@@ -1,9 +1,12 @@
-import React, { useState, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { UploadCloud, FileText } from 'lucide-react';
-import GCChart from './GCChart';
-import SafepointChart from './SafepointChart';
 import { parseLogFile, LogData } from './LogParser';
 import './index.css';
+
+// ⚡ Bolt: Lazy load heavy chart components (which include Recharts)
+// to drastically reduce initial bundle size and improve load time.
+const GCChart = lazy(() => import('./GCChart'));
+const SafepointChart = lazy(() => import('./SafepointChart'));
 
 function App() {
   const [data, setData] = useState<LogData[]>([]);
@@ -128,11 +131,13 @@ function App() {
           </label>
         </div>
 
-        <GCChart data={data} isDownsampled={isDownsampled} />
+        <Suspense fallback={<div className="chart-container"><div className="chart-empty">Loading charts...</div></div>}>
+          <GCChart data={data} isDownsampled={isDownsampled} />
 
-        {data.length > 0 && (
-          <SafepointChart data={data} isDownsampled={isDownsampled} />
-        )}
+          {data.length > 0 && (
+            <SafepointChart data={data} isDownsampled={isDownsampled} />
+          )}
+        </Suspense>
 
         {data.length > 0 && (
           <div className="stats-grid">
