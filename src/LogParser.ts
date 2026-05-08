@@ -48,8 +48,11 @@ export function parseLogFile(fileContent: string): LogData[] {
     let beforeVal: number | undefined, beforeUnit: string | undefined, afterVal: number | undefined, afterUnit: string | undefined;
     let reachingSafepointNs: number | undefined;
     
-    const isGC = line.includes('->');
-    const isSafepoint = !isGC && line.includes('Reaching safepoint:');
+    // ⚡ Bolt: Fast string indexing checks using indexOf before doing regex operations.
+    // indexOf is generally significantly faster than includes() and regex matching
+    // inside hot loops processing massive inputs like JVM logs.
+    const isGC = line.indexOf('->') !== -1;
+    const isSafepoint = !isGC && line.indexOf('Reaching safepoint:') !== -1;
     
     if (!isGC && !isSafepoint) {
       continue;
@@ -62,14 +65,16 @@ export function parseLogFile(fileContent: string): LogData[] {
     }
 
     if (isGC) {
-      const shenMatch = line.match(shenandoahRegex);
+      // ⚡ Bolt: Use Regex.exec() instead of String.match() in tight loops
+      // since exec() is faster and doesn't create as much intermediate array allocations.
+      const shenMatch = shenandoahRegex.exec(line);
       if (shenMatch) {
         beforeVal = parseFloat(shenMatch[1]);
         beforeUnit = shenMatch[2].toUpperCase();
         afterVal = parseFloat(shenMatch[3]);
         afterUnit = shenMatch[4].toUpperCase();
       } else {
-        const zgcMatch = line.match(zgcRegex);
+        const zgcMatch = zgcRegex.exec(line);
         if (zgcMatch) {
           beforeVal = parseFloat(zgcMatch[1]);
           beforeUnit = zgcMatch[2].toUpperCase();
@@ -80,7 +85,7 @@ export function parseLogFile(fileContent: string): LogData[] {
         }
       }
     } else {
-      const spMatch = line.match(safepointRegex);
+      const spMatch = safepointRegex.exec(line);
       if (spMatch) {
         reachingSafepointNs = parseFloat(spMatch[1]);
       } else {
