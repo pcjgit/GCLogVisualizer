@@ -25,9 +25,6 @@ export function parseLogFile(fileContent: string): LogData[] {
   
   // ZGC format: 2936M(18%)->2910M(18%)
   const zgcRegex = /(\d+(?:\.\d+)?)([KMGkmg]?)\(\d*%\)->(\d+(?:\.\d+)?)([KMGkmg]?)\(\d*%\)/;
-  
-  // Safepoint format: Reaching safepoint: 222321200 ns
-  const safepointRegex = /Reaching safepoint: (\d+) ns/;
 
   // Optimization: Reuse a single Date object across the massive parsing loop
   // to prevent allocating hundreds of thousands of Date instances, which
@@ -52,7 +49,8 @@ export function parseLogFile(fileContent: string): LogData[] {
     // indexOf is generally significantly faster than includes() and regex matching
     // inside hot loops processing massive inputs like JVM logs.
     const isGC = line.indexOf('->') !== -1;
-    const isSafepoint = !isGC && line.indexOf('Reaching safepoint:') !== -1;
+    const safepointIndex = isGC ? -1 : line.indexOf('Reaching safepoint: ');
+    const isSafepoint = safepointIndex !== -1;
     
     if (!isGC && !isSafepoint) {
       continue;
@@ -85,9 +83,12 @@ export function parseLogFile(fileContent: string): LogData[] {
         }
       }
     } else {
-      const spMatch = safepointRegex.exec(line);
-      if (spMatch) {
-        reachingSafepointNs = parseFloat(spMatch[1]);
+      // ⚡ Bolt: Replace Regex with fast string extraction for safepoint time.
+      // Reaching safepoint: \d+ ns
+      const nsStartIndex = safepointIndex + 20; // 'Reaching safepoint: '.length = 20
+      const nsEndIndex = line.indexOf(' ns', nsStartIndex);
+      if (nsEndIndex !== -1) {
+        reachingSafepointNs = parseFloat(line.substring(nsStartIndex, nsEndIndex));
       } else {
         continue;
       }
