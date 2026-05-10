@@ -11,8 +11,8 @@ export interface LogData {
 // to prevent repeated function allocations and excessive GC overhead
 const normalize = (val: number | undefined, unit: string | undefined) => {
   if (val === undefined || unit === undefined) return undefined;
-  if (unit === 'K') return val / 1024;
-  if (unit === 'G') return val * 1024;
+  if (unit === 'K' || unit === 'k') return val / 1024;
+  if (unit === 'G' || unit === 'g') return val * 1024;
   return val; // Assume M by default or no unit
 };
 
@@ -65,19 +65,21 @@ export function parseLogFile(fileContent: string): LogData[] {
     if (isGC) {
       // ⚡ Bolt: Use Regex.exec() instead of String.match() in tight loops
       // since exec() is faster and doesn't create as much intermediate array allocations.
+      // ⚡ Bolt: Use unary `+` operator instead of parseFloat(), and avoid `.toUpperCase()`
+      // to reduce CPU instructions and object allocations in a loop of 100k+ iterations.
       const shenMatch = shenandoahRegex.exec(line);
       if (shenMatch) {
-        beforeVal = parseFloat(shenMatch[1]);
-        beforeUnit = shenMatch[2].toUpperCase();
-        afterVal = parseFloat(shenMatch[3]);
-        afterUnit = shenMatch[4].toUpperCase();
+        beforeVal = +(shenMatch[1]);
+        beforeUnit = shenMatch[2];
+        afterVal = +(shenMatch[3]);
+        afterUnit = shenMatch[4];
       } else {
         const zgcMatch = zgcRegex.exec(line);
         if (zgcMatch) {
-          beforeVal = parseFloat(zgcMatch[1]);
-          beforeUnit = zgcMatch[2].toUpperCase();
-          afterVal = parseFloat(zgcMatch[3]);
-          afterUnit = zgcMatch[4].toUpperCase();
+          beforeVal = +(zgcMatch[1]);
+          beforeUnit = zgcMatch[2];
+          afterVal = +(zgcMatch[3]);
+          afterUnit = zgcMatch[4];
         } else {
           continue;
         }
@@ -88,7 +90,7 @@ export function parseLogFile(fileContent: string): LogData[] {
       const nsStartIndex = safepointIndex + 20; // 'Reaching safepoint: '.length = 20
       const nsEndIndex = line.indexOf(' ns', nsStartIndex);
       if (nsEndIndex !== -1) {
-        reachingSafepointNs = parseFloat(line.substring(nsStartIndex, nsEndIndex));
+        reachingSafepointNs = +(line.substring(nsStartIndex, nsEndIndex));
       } else {
         continue;
       }
@@ -103,10 +105,17 @@ export function parseLogFile(fileContent: string): LogData[] {
       timeLabel = lastTimeLabel;
     } else if (typeof timeValue === 'string') {
       // Check if relative time like "10.23s"
-      if (timeValue.endsWith('s') && !isNaN(parseFloat(timeValue))) {
-         timeValue = parseFloat(timeValue);
-         timeLabel = `${timeValue}s`;
-      } else {
+      // ⚡ Bolt: Fast extraction using slice before casting with unary `+`
+      // because +("10.23s") evaluates to NaN, whereas parseFloat("10.23s") parses it correctly.
+      if (timeValue.endsWith('s')) {
+         const numericPart = +(timeValue.slice(0, -1));
+         if (!isNaN(numericPart)) {
+           timeValue = numericPart;
+           timeLabel = `${timeValue}s`;
+         }
+      }
+      // If it wasn't a valid 's' format or parsing failed, try Date parsing.
+      if (typeof timeValue === 'string') {
          // Try parsing as date
          // Optimization: Use Date.parse to avoid allocating Invalid Date objects for non-date strings
          const parsedTime = Date.parse(timeValue);
