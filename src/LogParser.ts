@@ -18,7 +18,13 @@ const normalize = (val: number | undefined, unit: string | undefined) => {
 
 export function parseLogFile(fileContent: string): LogData[] {
   const lines = fileContent.split('\n');
-  const data: LogData[] = [];
+
+  // ⚡ Bolt: Pre-allocate the data array to the maximum possible size (lines.length)
+  // and assign by index instead of using Array.prototype.push().
+  // This prevents V8 from constantly reallocating the underlying array memory
+  // as it grows to hundreds of thousands of items, reducing parse time significantly.
+  const data: LogData[] = new Array(lines.length);
+  let dataIndex = 0;
 
   // Optimization: Reuse a single Date object across the massive parsing loop
   // to prevent allocating hundreds of thousands of Date instances, which
@@ -188,8 +194,11 @@ export function parseLogFile(fileContent: string): LogData[] {
       logEntry.reachingSafepointTime = Math.round(reachingSafepointNs / 100) / 10000;
     }
 
-    data.push(logEntry);
+    data[dataIndex++] = logEntry;
   }
+
+  // ⚡ Bolt: Trim the pre-allocated array down to its actual used size
+  data.length = dataIndex;
 
   return data;
 }
