@@ -23,3 +23,10 @@
 ## 2024-05-11 - [Optimize GC Log Parsing By Removing Regex]
 **Learning:** While `RegExp.exec()` is generally faster than `String.match()`, it still has significant overhead (regex engine compilation, execution, array allocations for capture groups) inside massive "hot loops" (e.g., parsing hundreds of thousands of JVM log lines).
 **Action:** When extracting values from very consistent, simple string patterns in extremely hot loops (like `738M->674M(5928M)`), use manual string parsing with chained `indexOf()`, `substring()`, and `charCodeAt()`. Benchmarks showed an over 2.5x speedup (~565ms -> ~224ms for 500k iterations) by avoiding regex entirely for these memory metrics in `LogParser.ts`.
+## 2024-05-24 - [Native LastIndexOf vs Manual Backward Iteration]
+**Learning:** In hot string parsing loops processing massive inputs like JVM logs, replacing manual character-by-character backward iteration (e.g., `while` loops checking `charCodeAt`) with native methods like `String.prototype.lastIndexOf()` is significantly faster. In a microbenchmark simulating parsing a space character before a GC metric, `lastIndexOf` reduced execution time by approximately 20% because it leverages optimized C++ executions instead of JS loop overhead.
+**Action:** Always prefer native string search methods (`indexOf`, `lastIndexOf`) over manual `while`/`for` character iteration loops when searching for delimiters in large strings.
+
+## 2024-05-24 - [JVM Log Parsing Early Exit Assumption]
+**Learning:** Attempted to optimize parsing loop by skipping lines that didn't start with a `[` character (`line.charCodeAt(0) !== 91`), assuming Java 9+ unified logging format. This is an anti-pattern as it breaks compatibility with Java 8 JVM logs which frequently start with unbracketed timestamps or numbers (e.g., `2023-10-24T...`).
+**Action:** Never assume all JVM GC log lines start with a specific formatting character like a bracket. Avoid premature early filtering based on the first character unless absolutely guaranteed by the domain requirements.

@@ -69,11 +69,11 @@ export function parseLogFile(fileContent: string): LogData[] {
       const arrowIndex = line.indexOf('->');
       if (arrowIndex !== -1) {
         // Find 'before' part
-        let beforeStart = arrowIndex - 1;
-        while (beforeStart >= 0 && line.charCodeAt(beforeStart) !== 32) { // 32 is space ' '
-          beforeStart--;
-        }
-        beforeStart++;
+        // ⚡ Bolt: Use lastIndexOf to find the space before the GC sizes instead of a while loop.
+        // In large loops processing millions of lines, moving backwards character by character
+        // with a while loop is significantly slower than using the native C++ backed lastIndexOf.
+        const spaceBeforeIndex = line.lastIndexOf(' ', arrowIndex - 1);
+        const beforeStart = spaceBeforeIndex === -1 ? 0 : spaceBeforeIndex + 1;
 
         let beforeStr = line.substring(beforeStart, arrowIndex);
 
