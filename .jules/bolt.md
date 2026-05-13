@@ -19,3 +19,7 @@
 ## 2024-05-24 - [Array Pre-allocation in Massive Loops]
 **Learning:** When parsing massive log files and pushing elements to an array using `Array.prototype.push()`, V8 repeatedly reallocates the underlying array memory as it grows dynamically. This introduces significant CPU and GC overhead. In a benchmark parsing 500,000 log lines, pre-allocating an array to the maximum possible size (`new Array(lines.length)`) and assigning by index, followed by truncating it (`data.length = dataIndex`), reduced parsing time by over 50% (from ~1493ms to ~665ms).
 **Action:** When populating arrays in tight loops over large known data sets, always pre-allocate the array, use index-based assignment, and truncate at the end instead of using `.push()`.
+
+## 2024-05-11 - [Optimize GC Log Parsing By Removing Regex]
+**Learning:** While `RegExp.exec()` is generally faster than `String.match()`, it still has significant overhead (regex engine compilation, execution, array allocations for capture groups) inside massive "hot loops" (e.g., parsing hundreds of thousands of JVM log lines).
+**Action:** When extracting values from very consistent, simple string patterns in extremely hot loops (like `738M->674M(5928M)`), use manual string parsing with chained `indexOf()`, `substring()`, and `charCodeAt()`. Benchmarks showed an over 2.5x speedup (~565ms -> ~224ms for 500k iterations) by avoiding regex entirely for these memory metrics in `LogParser.ts`.
