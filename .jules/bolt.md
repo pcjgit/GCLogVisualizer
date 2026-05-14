@@ -30,3 +30,7 @@
 ## 2024-05-24 - [JVM Log Parsing Early Exit Assumption]
 **Learning:** Attempted to optimize parsing loop by skipping lines that didn't start with a `[` character (`line.charCodeAt(0) !== 91`), assuming Java 9+ unified logging format. This is an anti-pattern as it breaks compatibility with Java 8 JVM logs which frequently start with unbracketed timestamps or numbers (e.g., `2023-10-24T...`).
 **Action:** Never assume all JVM GC log lines start with a specific formatting character like a bracket. Avoid premature early filtering based on the first character unless absolutely guaranteed by the domain requirements.
+
+## 2024-05-14 - [Avoid split('\\n') array allocations]
+**Learning:** Using `String.prototype.split('\n')` on large log files forces V8 to allocate an enormous array of strings upfront, causing high memory consumption and GC pauses.
+**Action:** By replacing `split('\n')` with a lazy traversal using `indexOf('\n', start)` and `substring(start, end)`, the engine leverages lightweight 'sliced strings' sharing the original buffer. This turns line extraction into an O(1) allocation operation and significantly reduces peak memory usage and parse time.
