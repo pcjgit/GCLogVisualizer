@@ -38,7 +38,7 @@ export function parseLogFile(fileContent: string): LogData[] {
   let lastTimeValue: string | number = "";
   let lastTimeLabel = "";
 
-  const isShenandoah = fileContent.indexOf('Shenandoah') !== -1;
+  const isShenandoah = fileContent.indexOf('Shenandoah') !== -1 || fileContent.indexOf('Concurrent cleanup') !== -1;
 
   // Optimization: Use standard for-loop and early string filtering
   // to avoid running regexes on every log line, reducing parsing time.
