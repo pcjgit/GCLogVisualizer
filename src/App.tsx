@@ -13,11 +13,13 @@ function App() {
   const [fileName, setFileName] = useState<string>('');
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [isDownsampled, setIsDownsampled] = useState<boolean>(false);
+  const [fullGCTime, setFullGCTime] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const processFile = (file: File) => {
     if (!file) return;
     setFileName(file.name);
+    setFullGCTime(null);
     
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -25,6 +27,20 @@ function App() {
         const text = e.target.result as string;
         const parsedData = parseLogFile(text);
         setData(parsedData);
+
+        let foundTime = null;
+        const fullGcIndex = text.indexOf('Upgrade To Full GC');
+        if (fullGcIndex !== -1) {
+          const lineStartIndex = text.lastIndexOf('\n', fullGcIndex);
+          const start = lineStartIndex === -1 ? 0 : lineStartIndex + 1;
+          const line = text.substring(start, fullGcIndex);
+          const firstBracket = line.indexOf('[');
+          const closeBracket = line.indexOf(']', firstBracket);
+          if (firstBracket !== -1 && closeBracket !== -1) {
+            foundTime = line.substring(firstBracket + 1, closeBracket);
+          }
+        }
+        setFullGCTime(foundTime);
       }
     };
     reader.readAsText(file);
@@ -156,6 +172,12 @@ function App() {
             <div className="stat-card">
               <div className="stat-title">Average Recovered</div>
               <div className="stat-value">{avgRecovered}M</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-title">Full GC Occurred</div>
+              <div className="stat-value" style={{ color: fullGCTime ? 'var(--red-color)' : 'var(--green-color)' }}>
+                {fullGCTime ? fullGCTime : 'No'}
+              </div>
             </div>
           </div>
         )}
