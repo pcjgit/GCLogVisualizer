@@ -13,11 +13,13 @@ function App() {
   const [fileName, setFileName] = useState<string>('');
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [isDownsampled, setIsDownsampled] = useState<boolean>(false);
+  const [hasFullGC, setHasFullGC] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const processFile = (file: File) => {
     if (!file) return;
     setFileName(file.name);
+    setHasFullGC(false);
     
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -25,6 +27,7 @@ function App() {
         const text = e.target.result as string;
         const parsedData = parseLogFile(text);
         setData(parsedData);
+        setHasFullGC(text.indexOf('Upgrade To Full GC') !== -1);
       }
     };
     reader.readAsText(file);
@@ -156,6 +159,12 @@ function App() {
             <div className="stat-card">
               <div className="stat-title">Average Recovered</div>
               <div className="stat-value">{avgRecovered}M</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-title">Full GC Occurred</div>
+              <div className="stat-value" style={{ color: hasFullGC ? 'var(--red-color)' : 'var(--green-color)' }}>
+                {hasFullGC ? 'Yes' : 'No'}
+              </div>
             </div>
           </div>
         )}
