@@ -7,7 +7,8 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer
+  ResponsiveContainer,
+  Brush
 } from 'recharts';
 import { LogData } from './LogParser';
 
@@ -98,6 +99,13 @@ const SafepointChart = ({ data, isDownsampled = false }: SafepointChartProps) =>
             name="Safepoint Time"
             fill="#eab308"
             hide={hiddenSeries.reachingSafepointTime}
+          />
+
+          <Brush
+            dataKey="timeLabel"
+            height={30}
+            stroke="#94a3b8"
+            fill="var(--bg-surface-hover)"
           />
         </ComposedChart>
       </ResponsiveContainer>

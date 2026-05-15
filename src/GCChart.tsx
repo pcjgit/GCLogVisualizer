@@ -7,7 +7,8 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer
+  ResponsiveContainer,
+  Brush
 } from 'recharts';
 import { LogData } from './LogParser';
 
@@ -120,6 +121,13 @@ const GCChart = ({ data, isDownsampled = false }: GCChartProps) => {
             connectNulls={true}
             hide={hiddenSeries.afterGC}
             activeDot={{ r: 6, fill: "var(--green-color)", stroke: "var(--bg-surface)", strokeWidth: 2 }}
+          />
+
+          <Brush
+            dataKey="timeLabel"
+            height={30}
+            stroke="#94a3b8"
+            fill="var(--bg-surface-hover)"
           />
         </ComposedChart>
       </ResponsiveContainer>
