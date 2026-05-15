@@ -34,3 +34,7 @@
 ## 2024-05-14 - [Avoid split('\\n') array allocations]
 **Learning:** Using `String.prototype.split('\n')` on large log files forces V8 to allocate an enormous array of strings upfront, causing high memory consumption and GC pauses.
 **Action:** By replacing `split('\n')` with a lazy traversal using `indexOf('\n', start)` and `substring(start, end)`, the engine leverages lightweight 'sliced strings' sharing the original buffer. This turns line extraction into an O(1) allocation operation and significantly reduces peak memory usage and parse time.
+
+## 2024-05-24 - [endsWith vs charCodeAt in Tight Loops]
+**Learning:** In a loop with millions of iterations, using `String.prototype.endsWith()` introduces significant CPU overhead. A microbenchmark showed that using `charCodeAt` or bracket access to check the last character (`string.charCodeAt(string.length - 1) === 115` or `string[string.length - 1] === 's'`) is roughly 6x faster than `endsWith()` (60ms vs 380ms for 50M iterations). Additionally, `substring` is marginally faster than `slice` for stripping the last character.
+**Action:** When performing suffix checking or extraction on millions of small strings in tight, massive loops (like timestamp unit parsing), bypass `endsWith()` and use raw character index checking with `charCodeAt()` or bracket access combined with `substring()` to reduce execution time.
