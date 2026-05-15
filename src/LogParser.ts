@@ -38,6 +38,8 @@ export function parseLogFile(fileContent: string): LogData[] {
   let lastTimeValue: string | number = "";
   let lastTimeLabel = "";
 
+  const isShenandoah = fileContent.indexOf('Shenandoah') !== -1;
+
   // Optimization: Use standard for-loop and early string filtering
   // to avoid running regexes on every log line, reducing parsing time.
   let lineStart = 0;
@@ -54,8 +56,18 @@ export function parseLogFile(fileContent: string): LogData[] {
     // ⚡ Bolt: Fast string indexing checks using indexOf before doing regex operations.
     // indexOf is generally significantly faster than includes() and regex matching
     // inside hot loops processing massive inputs like JVM logs.
-    const isGC = line.indexOf('->') !== -1;
-    const safepointIndex = isGC ? -1 : line.indexOf('Reaching safepoint: ');
+    const hasArrow = line.indexOf('->') !== -1;
+    let isGC = hasArrow;
+
+    if (isGC && (line.indexOf('Metaspace') !== -1 || line.indexOf('metaspace') !== -1)) {
+        isGC = false;
+    }
+
+    if (isGC && isShenandoah && line.indexOf('Concurrent cleanup') === -1) {
+        isGC = false;
+    }
+
+    const safepointIndex = hasArrow ? -1 : line.indexOf('Reaching safepoint: ');
     const isSafepoint = safepointIndex !== -1;
     
     if (!isGC && !isSafepoint) {
