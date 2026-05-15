@@ -183,6 +183,10 @@ export function parseLogFile(fileContent: string): LogData[] {
     const beforeMB = normalize(beforeVal, beforeUnit);
     const afterMB = normalize(afterVal, afterUnit);
 
+    if (isGC && (beforeMB === undefined || afterMB === undefined)) {
+      continue;
+    }
+
     const logEntry: LogData = {
       rawTime: timeStr,
       timeValue,
