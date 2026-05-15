@@ -13,7 +13,7 @@ function App() {
   const [fileName, setFileName] = useState<string>('');
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [isDownsampled, setIsDownsampled] = useState<boolean>(false);
-  const [fullGCTime, setFullGCTime] = useState<string | null>(null);
+  const [fullGCTime, setFullGCTime] = useState<{ date: string, time: string, tz: string } | string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const processFile = (file: File) => {
@@ -28,7 +28,7 @@ function App() {
         const parsedData = parseLogFile(text);
         setData(parsedData);
 
-        let foundTime = null;
+        let foundTime: { date: string, time: string, tz: string } | string | null = null;
         const fullGcIndex = text.indexOf('Upgrade To Full GC');
         if (fullGcIndex !== -1) {
           const lineStartIndex = text.lastIndexOf('\n', fullGcIndex);
@@ -37,7 +37,23 @@ function App() {
           const firstBracket = line.indexOf('[');
           const closeBracket = line.indexOf(']', firstBracket);
           if (firstBracket !== -1 && closeBracket !== -1) {
-            foundTime = line.substring(firstBracket + 1, closeBracket);
+            const timeStr = line.substring(firstBracket + 1, closeBracket);
+            const tIndex = timeStr.indexOf('T');
+            if (tIndex !== -1) {
+              const date = timeStr.substring(0, tIndex);
+              let tz = '';
+              let time = '';
+              const tzMatch = timeStr.substring(tIndex + 1).match(/([+-]\d{4}|Z)$/);
+              if (tzMatch) {
+                tz = tzMatch[1];
+                time = timeStr.substring(tIndex + 1, timeStr.length - tz.length);
+              } else {
+                time = timeStr.substring(tIndex + 1);
+              }
+              foundTime = { date, time, tz };
+            } else {
+              foundTime = timeStr;
+            }
           }
         }
         setFullGCTime(foundTime);
@@ -176,7 +192,17 @@ function App() {
             <div className="stat-card">
               <div className="stat-title">Full GC Occurred</div>
               <div className="stat-value" style={{ color: fullGCTime ? 'var(--red-color)' : 'var(--green-color)' }}>
-                {fullGCTime ? fullGCTime : 'No'}
+                {fullGCTime ? (
+                  typeof fullGCTime === 'string' ? (
+                    fullGCTime
+                  ) : (
+                    <>
+                      <div style={{ fontSize: '0.8em', lineHeight: '1.2' }}>{fullGCTime.date}</div>
+                      <div style={{ fontSize: '0.8em', lineHeight: '1.2' }}>{fullGCTime.time}</div>
+                      <div style={{ fontSize: '0.8em', lineHeight: '1.2' }}>{fullGCTime.tz}</div>
+                    </>
+                  )
+                ) : 'No'}
               </div>
             </div>
           </div>
