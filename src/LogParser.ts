@@ -17,13 +17,13 @@ const normalize = (val: number | undefined, unit: string | undefined) => {
 };
 
 export function parseLogFile(fileContent: string): LogData[] {
-  const lines = fileContent.split('\n');
-
-  // ⚡ Bolt: Pre-allocate the data array to the maximum possible size (lines.length)
-  // and assign by index instead of using Array.prototype.push().
-  // This prevents V8 from constantly reallocating the underlying array memory
-  // as it grows to hundreds of thousands of items, reducing parse time significantly.
-  const data: LogData[] = new Array(lines.length);
+  // ⚡ Bolt: Avoid split('\n') to prevent massive array allocation.
+  // Instead, use indexOf('\n') and substring() to process line by line.
+  // In V8, substring creates a "sliced string" which is an O(1) memory operation
+  // pointing to the original large string buffer, avoiding massive memory copies.
+  const len = fileContent.length;
+  // Estimate array capacity to avoid continuous reallocation (rough estimate based on 80 chars per line)
+  const data: LogData[] = new Array(Math.ceil(len / 80));
   let dataIndex = 0;
 
   // Optimization: Reuse a single Date object across the massive parsing loop
@@ -40,8 +40,14 @@ export function parseLogFile(fileContent: string): LogData[] {
 
   // Optimization: Use standard for-loop and early string filtering
   // to avoid running regexes on every log line, reducing parsing time.
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  let lineStart = 0;
+  while (lineStart < len) {
+    let lineEnd = fileContent.indexOf('\n', lineStart);
+    if (lineEnd === -1) lineEnd = len;
+
+    // Extract line using constant-time sliced strings
+    const line = fileContent.substring(lineStart, lineEnd);
+    lineStart = lineEnd + 1;
     let beforeVal: number | undefined, beforeUnit: string | undefined, afterVal: number | undefined, afterUnit: string | undefined;
     let reachingSafepointNs: number | undefined;
     
@@ -194,6 +200,10 @@ export function parseLogFile(fileContent: string): LogData[] {
       logEntry.reachingSafepointTime = Math.round(reachingSafepointNs / 100) / 10000;
     }
 
+    // ⚡ Bolt: Dynamically resize if the estimate wasn't large enough
+    if (dataIndex >= data.length) {
+        data.length *= 2;
+    }
     data[dataIndex++] = logEntry;
   }
 
