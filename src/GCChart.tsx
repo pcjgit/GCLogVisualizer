@@ -99,8 +99,13 @@ const GCChart = ({ data, isDownsampled = false }: GCChartProps) => {
             onClick={handleLegendClick}
           />
           
+          {/* ⚡ Bolt: Disable animation and use linear instead of monotone curves.
+              Calculating cubic bezier splines and animating thousands of points causes
+              severe main-thread blocking and UI jank. Linear paths are both faster
+              and visually more accurate for immediate memory drop-offs in GC graphs. */}
           <Line 
-            type="monotone" 
+            type="linear"
+            isAnimationActive={false}
             dataKey="beforeGC" 
             name="Before GC" 
             stroke="var(--red-color)" 
@@ -112,7 +117,8 @@ const GCChart = ({ data, isDownsampled = false }: GCChartProps) => {
           />
           
           <Line 
-            type="monotone" 
+            type="linear"
+            isAnimationActive={false}
             dataKey="afterGC" 
             name="After GC" 
             stroke="var(--green-color)" 
