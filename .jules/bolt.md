@@ -38,3 +38,7 @@
 ## 2024-05-24 - [endsWith vs charCodeAt in Tight Loops]
 **Learning:** In a loop with millions of iterations, using `String.prototype.endsWith()` introduces significant CPU overhead. A microbenchmark showed that using `charCodeAt` or bracket access to check the last character (`string.charCodeAt(string.length - 1) === 115` or `string[string.length - 1] === 's'`) is roughly 6x faster than `endsWith()` (60ms vs 380ms for 50M iterations). Additionally, `substring` is marginally faster than `slice` for stripping the last character.
 **Action:** When performing suffix checking or extraction on millions of small strings in tight, massive loops (like timestamp unit parsing), bypass `endsWith()` and use raw character index checking with `charCodeAt()` or bracket access combined with `substring()` to reduce execution time.
+
+## 2024-05-23 - Recharts Curve Computation and Animations
+**Learning:** Recharts defaults to `monotone` curves for `<Line>` charts and enables animations by default. For data-dense analytical charts (like GC monitoring with thousands of points), calculating cubic bezier splines for every point and animating them causes severe main-thread blocking and UI jank. Additionally, `monotone` curves introduce visual inaccuracies (overshoots) in GC graphs, where memory drops instantaneously rather than smoothly.
+**Action:** Always use `type="linear"` or `type="step-after"` and explicitly set `isAnimationActive={false}` for time-series charts with large datasets (>1000 points) to drastically improve rendering performance and visual accuracy.

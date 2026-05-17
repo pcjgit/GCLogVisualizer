@@ -94,7 +94,10 @@ const SafepointChart = ({ data, isDownsampled = false }: SafepointChartProps) =>
             onClick={handleLegendClick}
           />
 
+          {/* ⚡ Bolt: Disable animation to prevent main-thread blocking
+              when rendering thousands of safepoint scatter marks. */}
           <Scatter
+            isAnimationActive={false}
             dataKey="reachingSafepointTime"
             name="Safepoint Time"
             fill="#eab308"
