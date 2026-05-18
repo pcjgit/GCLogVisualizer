@@ -4,7 +4,7 @@ export interface LogData {
   timeLabel: string;
   beforeGC?: number;
   afterGC?: number;
-  reachingSafepointTime?: number; // time in ms
+  pauseTime?: number; // time in ms
 }
 
 // Optimization: Move closure outside of massive parsing loop
@@ -47,24 +47,24 @@ export function parseLogFile(fileContent: string): LogData[] {
   // on uninteresting lines.
   let searchIndex = 0;
   let nextArrow = fileContent.indexOf('->', searchIndex);
-  let nextSafepoint = fileContent.indexOf('Reaching safepoint: ', searchIndex);
+  let nextPause = fileContent.indexOf('Pause', searchIndex);
 
-  while (nextArrow !== -1 || nextSafepoint !== -1) {
+  while (nextArrow !== -1 || nextPause !== -1) {
     let targetIndex = -1;
-    if (nextArrow !== -1 && nextSafepoint !== -1) {
-        if (nextArrow < nextSafepoint) {
+    if (nextArrow !== -1 && nextPause !== -1) {
+        if (nextArrow < nextPause) {
             targetIndex = nextArrow;
             nextArrow = fileContent.indexOf('->', targetIndex + 1);
         } else {
-            targetIndex = nextSafepoint;
-            nextSafepoint = fileContent.indexOf('Reaching safepoint: ', targetIndex + 1);
+            targetIndex = nextPause;
+            nextPause = fileContent.indexOf('Pause', targetIndex + 1);
         }
     } else if (nextArrow !== -1) {
         targetIndex = nextArrow;
         nextArrow = fileContent.indexOf('->', targetIndex + 1);
     } else {
-        targetIndex = nextSafepoint;
-        nextSafepoint = fileContent.indexOf('Reaching safepoint: ', targetIndex + 1);
+        targetIndex = nextPause;
+        nextPause = fileContent.indexOf('Pause', targetIndex + 1);
     }
 
     if (targetIndex < searchIndex) {
@@ -81,7 +81,7 @@ export function parseLogFile(fileContent: string): LogData[] {
     searchIndex = lineEnd + 1; // Move search cursor past this line
 
     let beforeVal: number | undefined, beforeUnit: string | undefined, afterVal: number | undefined, afterUnit: string | undefined;
-    let reachingSafepointNs: number | undefined;
+    let pauseDurationMs: number | undefined;
     
     const hasArrow = line.indexOf('->') !== -1;
     let isGC = hasArrow;
@@ -94,10 +94,10 @@ export function parseLogFile(fileContent: string): LogData[] {
         isGC = false;
     }
 
-    const safepointIndex = hasArrow ? -1 : line.indexOf('Reaching safepoint: ');
-    const isSafepoint = safepointIndex !== -1;
+    const pauseIndex = line.indexOf('Pause');
+    const isPause = pauseIndex !== -1;
     
-    if (!isGC && !isSafepoint) {
+    if (!isGC && !isPause) {
       continue;
     }
 
@@ -167,12 +167,15 @@ export function parseLogFile(fileContent: string): LogData[] {
         continue;
       }
     } else {
-      // ⚡ Bolt: Replace Regex with fast string extraction for safepoint time.
-      // Reaching safepoint: \d+ ns
-      const nsStartIndex = safepointIndex + 20; // 'Reaching safepoint: '.length = 20
-      const nsEndIndex = line.indexOf(' ns', nsStartIndex);
-      if (nsEndIndex !== -1) {
-        reachingSafepointNs = +(line.substring(nsStartIndex, nsEndIndex));
+      // ⚡ Bolt: Replace Regex with fast string extraction for pause time.
+      const msEndIndex = line.lastIndexOf('ms');
+      if (msEndIndex !== -1 && msEndIndex > pauseIndex) {
+        const spaceBeforeMs = line.lastIndexOf(' ', msEndIndex);
+        if (spaceBeforeMs !== -1) {
+          pauseDurationMs = +(line.substring(spaceBeforeMs + 1, msEndIndex));
+        } else {
+          continue;
+        }
       } else {
         continue;
       }
@@ -239,9 +242,8 @@ export function parseLogFile(fileContent: string): LogData[] {
       logEntry.afterGC = Math.round(afterMB * 100) / 100;
     }
 
-    if (reachingSafepointNs !== undefined) {
-      // Convert nanoseconds to milliseconds
-      logEntry.reachingSafepointTime = Math.round(reachingSafepointNs / 100) / 10000;
+    if (pauseDurationMs !== undefined) {
+      logEntry.pauseTime = pauseDurationMs;
     }
 
     // ⚡ Bolt: Dynamically resize if the estimate wasn't large enough
