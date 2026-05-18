@@ -6,7 +6,7 @@ import './index.css';
 // ⚡ Bolt: Lazy load heavy chart components (which include Recharts)
 // to drastically reduce initial bundle size and improve load time.
 const GCChart = lazy(() => import('./GCChart'));
-const SafepointChart = lazy(() => import('./SafepointChart'));
+const PauseChart = lazy(() => import('./PauseChart'));
 
 function App() {
   const [data, setData] = useState<LogData[]>([]);
@@ -167,7 +167,7 @@ function App() {
           <GCChart data={data} isDownsampled={isDownsampled} />
 
           {data.length > 0 && (
-            <SafepointChart data={data} isDownsampled={isDownsampled} />
+            <PauseChart data={data} isDownsampled={isDownsampled} />
           )}
         </Suspense>
 

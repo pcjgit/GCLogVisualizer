@@ -28,14 +28,14 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-interface SafepointChartProps {
+interface PauseChartProps {
   data: LogData[];
   isDownsampled?: boolean;
 }
 
-const SafepointChart = ({ data, isDownsampled = false }: SafepointChartProps) => {
+const PauseChart = ({ data, isDownsampled = false }: PauseChartProps) => {
   const [hiddenSeries, setHiddenSeries] = useState<Record<string, boolean>>({
-    reachingSafepointTime: false,
+    pauseTime: false,
   });
 
   const handleLegendClick = (e: any) => {
@@ -95,13 +95,13 @@ const SafepointChart = ({ data, isDownsampled = false }: SafepointChartProps) =>
           />
 
           {/* ⚡ Bolt: Disable animation to prevent main-thread blocking
-              when rendering thousands of safepoint scatter marks. */}
+              when rendering thousands of pause scatter marks. */}
           <Scatter
             isAnimationActive={false}
-            dataKey="reachingSafepointTime"
-            name="Safepoint Time"
+            dataKey="pauseTime"
+            name="Pause Time"
             fill="#eab308"
-            hide={hiddenSeries.reachingSafepointTime}
+            hide={hiddenSeries.pauseTime}
           />
 
           <Brush
@@ -118,4 +118,4 @@ const SafepointChart = ({ data, isDownsampled = false }: SafepointChartProps) =>
 
 // Optimization: Memoize the chart component to prevent expensive re-renders
 // when parent App state changes (e.g. during drag-and-drop 'isDragging' toggles)
-export default React.memo(SafepointChart);
+export default React.memo(PauseChart);
