@@ -58,12 +58,21 @@ const PauseChart = ({ data, isDownsampled = false }: PauseChartProps) => {
   // Optimization: Memoize and use an O(K) loop instead of O(N) filter.
   const chartData = useMemo(() => {
     if (!data) return [];
-    if (!isDownsampled || data.length <= 2000) return data;
+
+    // Filter out data points that do not have pauseTime
+    const filteredData = [];
+    for (let i = 0; i < data.length; i++) {
+      if (data[i].pauseTime !== undefined) {
+        filteredData.push(data[i]);
+      }
+    }
+
+    if (!isDownsampled || filteredData.length <= 2000) return filteredData;
 
     const result = [];
-    const step = Math.ceil(data.length / 2000);
-    for (let i = 0; i < data.length; i += step) {
-      result.push(data[i]);
+    const step = Math.ceil(filteredData.length / 2000);
+    for (let i = 0; i < filteredData.length; i += step) {
+      result.push(filteredData[i]);
     }
     return result;
   }, [data, isDownsampled]);
