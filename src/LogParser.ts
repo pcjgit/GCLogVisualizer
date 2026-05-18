@@ -10,10 +10,10 @@ export interface LogData {
 
 // Optimization: Move closure outside of massive parsing loop
 // to prevent repeated function allocations and excessive GC overhead
-const normalize = (val: number | undefined, unit: string | undefined) => {
-  if (val === undefined || unit === undefined) return undefined;
-  if (unit === 'K' || unit === 'k') return val / 1024;
-  if (unit === 'G' || unit === 'g') return val * 1024;
+const normalize = (val: number | undefined, unitCode: number | undefined) => {
+  if (val === undefined || unitCode === undefined) return undefined;
+  if (unitCode === 75 || unitCode === 107) return val / 1024; // K or k
+  if (unitCode === 71 || unitCode === 103) return val * 1024; // G or g
   return val; // Assume M by default or no unit
 };
 
@@ -81,14 +81,14 @@ export function parseLogFile(fileContent: string): LogData[] {
     const line = fileContent.substring(lineStart, lineEnd);
     searchIndex = lineEnd + 1; // Move search cursor past this line
 
-    let beforeVal: number | undefined, beforeUnit: string | undefined, afterVal: number | undefined, afterUnit: string | undefined;
+    let beforeVal: number | undefined, beforeUnitCode: number | undefined, afterVal: number | undefined, afterUnitCode: number | undefined;
     let pauseDurationMs: number | undefined;
     let pauseType: string | undefined;
     
-    const hasArrow = line.indexOf('->') !== -1;
-    let isGC = hasArrow;
+    const arrowIndex = line.indexOf('->');
+    let isGC = arrowIndex !== -1;
 
-    if (isGC && (line.indexOf('Metaspace') !== -1 || line.indexOf('metaspace') !== -1)) {
+    if (isGC && line.indexOf('etaspace') !== -1) {
         isGC = false;
     }
 
@@ -113,7 +113,6 @@ export function parseLogFile(fileContent: string): LogData[] {
       // ⚡ Bolt: Replace regular expressions with fast string operations for parsing GC entries.
       // String methods (indexOf, substring) are >2.5x faster than RegExp.exec() in this massive
       // hot loop because they avoid regex engine overhead and excessive array allocations.
-      const arrowIndex = line.indexOf('->');
       if (arrowIndex !== -1) {
         // Find 'before' part
         // ⚡ Bolt: Use lastIndexOf to find the space before the GC sizes instead of a while loop.
@@ -135,7 +134,7 @@ export function parseLogFile(fileContent: string): LogData[] {
           const bLastChar = beforeStr.charCodeAt(beforeStr.length - 1);
           // Check if last char is K, M, G, k, m, g
           if ((bLastChar >= 65 && bLastChar <= 90) || (bLastChar >= 97 && bLastChar <= 122)) {
-            beforeUnit = beforeStr[beforeStr.length - 1];
+            beforeUnitCode = bLastChar;
             beforeVal = +(beforeStr.substring(0, beforeStr.length - 1));
           } else {
             beforeVal = +beforeStr;
@@ -155,7 +154,7 @@ export function parseLogFile(fileContent: string): LogData[] {
         if (afterStr.length > 0) {
           const aLastChar = afterStr.charCodeAt(afterStr.length - 1);
           if ((aLastChar >= 65 && aLastChar <= 90) || (aLastChar >= 97 && aLastChar <= 122)) {
-            afterUnit = afterStr[afterStr.length - 1];
+            afterUnitCode = aLastChar;
             afterVal = +(afterStr.substring(0, afterStr.length - 1));
           } else {
             afterVal = +afterStr;
@@ -226,8 +225,8 @@ export function parseLogFile(fileContent: string): LogData[] {
       lastTimeLabel = timeLabel;
     }
 
-    const beforeMB = normalize(beforeVal, beforeUnit);
-    const afterMB = normalize(afterVal, afterUnit);
+    const beforeMB = normalize(beforeVal, beforeUnitCode);
+    const afterMB = normalize(afterVal, afterUnitCode);
 
     if (isGC && (beforeMB === undefined || afterMB === undefined)) {
       continue;
