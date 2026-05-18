@@ -239,15 +239,26 @@ export function parseLogFile(fileContent: string): LogData[] {
       timeLabel,
     };
 
+    let hasData = false;
+
     if (beforeMB !== undefined && afterMB !== undefined) {
       // Optimization: Math.round avoids expensive string allocations of toFixed/parseFloat
       logEntry.beforeGC = Math.round(beforeMB * 100) / 100;
       logEntry.afterGC = Math.round(afterMB * 100) / 100;
+      hasData = true;
     }
 
     if (pauseDurationMs !== undefined) {
-      logEntry.pauseTime = pauseDurationMs;
-      logEntry.pauseType = pauseType;
+      const trimmedType = pauseType ? pauseType.trim() : "";
+      if (trimmedType !== "" && trimmedType !== "Pause") {
+        logEntry.pauseTime = pauseDurationMs;
+        logEntry.pauseType = pauseType;
+        hasData = true;
+      }
+    }
+
+    if (!hasData) {
+      continue;
     }
 
     // ⚡ Bolt: Dynamically resize if the estimate wasn't large enough
