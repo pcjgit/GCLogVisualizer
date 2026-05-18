@@ -5,6 +5,7 @@ export interface LogData {
   beforeGC?: number;
   afterGC?: number;
   pauseTime?: number; // time in ms
+  pauseType?: string;
 }
 
 // Optimization: Move closure outside of massive parsing loop
@@ -82,6 +83,7 @@ export function parseLogFile(fileContent: string): LogData[] {
 
     let beforeVal: number | undefined, beforeUnit: string | undefined, afterVal: number | undefined, afterUnit: string | undefined;
     let pauseDurationMs: number | undefined;
+    let pauseType: string | undefined;
     
     const hasArrow = line.indexOf('->') !== -1;
     let isGC = hasArrow;
@@ -173,6 +175,7 @@ export function parseLogFile(fileContent: string): LogData[] {
         const spaceBeforeMs = line.lastIndexOf(' ', msEndIndex);
         if (spaceBeforeMs !== -1) {
           pauseDurationMs = +(line.substring(spaceBeforeMs + 1, msEndIndex));
+          pauseType = line.substring(pauseIndex, spaceBeforeMs);
         } else {
           continue;
         }
@@ -244,6 +247,7 @@ export function parseLogFile(fileContent: string): LogData[] {
 
     if (pauseDurationMs !== undefined) {
       logEntry.pauseTime = pauseDurationMs;
+      logEntry.pauseType = pauseType;
     }
 
     // ⚡ Bolt: Dynamically resize if the estimate wasn't large enough

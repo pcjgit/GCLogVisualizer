@@ -14,9 +14,15 @@ import { LogData } from './LogParser';
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
+    const pauseType = payload[0]?.payload?.pauseType;
     return (
       <div className="custom-tooltip">
         <p className="tooltip-label">{label}</p>
+        {pauseType && (
+          <p className="tooltip-item" style={{ color: '#eab308' }}>
+            Type: {pauseType}
+          </p>
+        )}
         {payload.map((entry: any, index: number) => (
           <p key={`item-${index}`} style={{ color: entry.color }} className="tooltip-item">
             {entry.name}: {entry.value} ms
