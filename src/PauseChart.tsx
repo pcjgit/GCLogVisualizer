@@ -56,24 +56,49 @@ const PauseChart = ({ data, isDownsampled = false }: PauseChartProps) => {
 
   // Sample data slightly to avoid rendering thousands of points which lags standard LineChart
   // Optimization: Memoize and use an O(K) loop instead of O(N) filter.
+  // ⚡ Bolt: Eliminate intermediate arrays and Array.prototype.push()
+  // to avoid V8 array resizing overhead and high memory consumption.
   const chartData = useMemo(() => {
     if (!data) return [];
 
-    // Filter out data points that do not have pauseTime
-    const filteredData = [];
-    for (let i = 0; i < data.length; i++) {
+    // Pass 1: Count valid items
+    let validCount = 0;
+    const len = data.length;
+    for (let i = 0; i < len; i++) {
       if (data[i].pauseTime !== undefined) {
-        filteredData.push(data[i]);
+        validCount++;
       }
     }
 
-    if (!isDownsampled || filteredData.length <= 2000) return filteredData;
+    if (validCount === 0) return [];
 
-    const result = [];
-    const step = Math.ceil(filteredData.length / 2000);
-    for (let i = 0; i < filteredData.length; i += step) {
-      result.push(filteredData[i]);
+    if (!isDownsampled || validCount <= 2000) {
+      const result = new Array(validCount);
+      let idx = 0;
+      for (let i = 0; i < len; i++) {
+        if (data[i].pauseTime !== undefined) {
+          result[idx++] = data[i];
+        }
+      }
+      return result;
     }
+
+    const step = Math.ceil(validCount / 2000);
+    const resultSize = Math.ceil(validCount / step);
+    const result = new Array(resultSize);
+
+    let validSeen = 0;
+    let resultIdx = 0;
+    for (let i = 0; i < len; i++) {
+      if (data[i].pauseTime !== undefined) {
+        if (validSeen % step === 0) {
+          result[resultIdx++] = data[i];
+        }
+        validSeen++;
+      }
+    }
+
+    result.length = resultIdx; // Ensure perfectly sized array
     return result;
   }, [data, isDownsampled]);
 
