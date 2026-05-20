@@ -53,23 +53,18 @@ export function parseLogFile(fileContent: string): LogData[] {
   while (nextArrow !== -1 || nextPause !== -1) {
     let targetIndex = -1;
     if (nextArrow !== -1 && nextPause !== -1) {
-        if (nextArrow < nextPause) {
-            targetIndex = nextArrow;
-            nextArrow = fileContent.indexOf('->', targetIndex + 1);
-        } else {
-            targetIndex = nextPause;
-            nextPause = fileContent.indexOf('Pause', targetIndex + 1);
-        }
+        targetIndex = nextArrow < nextPause ? nextArrow : nextPause;
     } else if (nextArrow !== -1) {
         targetIndex = nextArrow;
-        nextArrow = fileContent.indexOf('->', targetIndex + 1);
     } else {
         targetIndex = nextPause;
-        nextPause = fileContent.indexOf('Pause', targetIndex + 1);
     }
 
     if (targetIndex < searchIndex) {
-        continue; // Should not happen, but safe guard
+        // Fallback safety to prevent infinite loops if something goes wrong
+        if (nextArrow !== -1 && nextArrow < searchIndex) nextArrow = fileContent.indexOf('->', searchIndex);
+        if (nextPause !== -1 && nextPause < searchIndex) nextPause = fileContent.indexOf('Pause', searchIndex);
+        continue;
     }
 
     let lineStart = fileContent.lastIndexOf('\n', targetIndex);
@@ -80,6 +75,16 @@ export function parseLogFile(fileContent: string): LogData[] {
     // Extract line using constant-time sliced strings
     const line = fileContent.substring(lineStart, lineEnd);
     searchIndex = lineEnd + 1; // Move search cursor past this line
+
+    // ⚡ Bolt: Advance pointers to the search index simultaneously.
+    // This perfectly synchronizes both pointers and completely eliminates
+    // redundant iterations and backwards searching when a single line contains both keywords.
+    if (nextArrow !== -1 && nextArrow < searchIndex) {
+        nextArrow = fileContent.indexOf('->', searchIndex);
+    }
+    if (nextPause !== -1 && nextPause < searchIndex) {
+        nextPause = fileContent.indexOf('Pause', searchIndex);
+    }
 
     let beforeVal: number | undefined, beforeUnitCode: number | undefined, afterVal: number | undefined, afterUnitCode: number | undefined;
     let pauseDurationMs: number | undefined;
