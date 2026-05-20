@@ -51,15 +51,23 @@ const GCChart = ({ data, isDownsampled = false }: GCChartProps) => {
 
   // Sample data slightly to avoid rendering thousands of points which lags standard LineChart
   // Optimization: Memoize and use an O(K) loop instead of O(N) filter.
+  // ⚡ Bolt: Pre-allocate the result array and assign by index instead of using
+  // Array.prototype.push() to avoid continuous internal memory reallocations in V8.
   const chartData = useMemo(() => {
     if (!data) return [];
-    if (!isDownsampled || data.length <= 2000) return data;
+    const len = data.length;
+    if (!isDownsampled || len <= 2000) return data;
 
-    const result = [];
-    const step = Math.ceil(data.length / 2000);
-    for (let i = 0; i < data.length; i += step) {
-      result.push(data[i]);
+    const step = Math.ceil(len / 2000);
+    const resultSize = Math.ceil(len / step);
+    const result = new Array(resultSize);
+
+    let resultIdx = 0;
+    for (let i = 0; i < len; i += step) {
+      result[resultIdx++] = data[i];
     }
+
+    result.length = resultIdx; // Ensure exact length in case of minor division discrepancies
     return result;
   }, [data, isDownsampled]);
 
