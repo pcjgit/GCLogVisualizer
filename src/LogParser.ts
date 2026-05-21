@@ -74,6 +74,13 @@ export function parseLogFile(fileContent: string): LogData[] {
 
     // Extract line using constant-time sliced strings
     const line = fileContent.substring(lineStart, lineEnd);
+
+    // ⚡ Bolt: Compute local indices directly from the global pointers before advancing them.
+    // This entirely eliminates two redundant O(N) line.indexOf() calls per line,
+    // as we already found their exact locations in the massive fileContent string.
+    const arrowIndex = (nextArrow !== -1 && nextArrow < lineEnd) ? nextArrow - lineStart : -1;
+    const pauseIndex = (nextPause !== -1 && nextPause < lineEnd) ? nextPause - lineStart : -1;
+
     searchIndex = lineEnd + 1; // Move search cursor past this line
 
     // ⚡ Bolt: Advance pointers to the search index simultaneously.
@@ -90,7 +97,6 @@ export function parseLogFile(fileContent: string): LogData[] {
     let pauseDurationMs: number | undefined;
     let pauseType: string | undefined;
     
-    const arrowIndex = line.indexOf('->');
     let isGC = arrowIndex !== -1;
 
     if (isGC && line.indexOf('etaspace') !== -1) {
@@ -101,7 +107,6 @@ export function parseLogFile(fileContent: string): LogData[] {
         isGC = false;
     }
 
-    const pauseIndex = line.indexOf('Pause');
     const isPause = pauseIndex !== -1;
     
     if (!isGC && !isPause) {
