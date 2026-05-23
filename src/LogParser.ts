@@ -131,23 +131,21 @@ export function parseLogFile(fileContent: string): LogData[] {
         const spaceBeforeIndex = line.lastIndexOf(' ', arrowIndex - 1);
         const beforeStart = spaceBeforeIndex === -1 ? 0 : spaceBeforeIndex + 1;
 
-        let beforeStr = line.substring(beforeStart, arrowIndex);
-
         // ZGC format includes (xx%) before the ->, Shenandoah doesn't.
         // E.g., 2936M(18%) or 738M
-        const bParen = beforeStr.indexOf('(');
-        if (bParen !== -1) {
-          beforeStr = beforeStr.substring(0, bParen);
-        }
+        // ⚡ Bolt: Avoid intermediate string allocations. Compute bounds entirely using integer logic
+        // on the parent string, and extract the precise required chunk with one substring call.
+        const bParen = line.indexOf('(', beforeStart);
+        const beforeEnd = bParen !== -1 && bParen < arrowIndex ? bParen : arrowIndex;
 
-        if (beforeStr.length > 0) {
-          const bLastChar = beforeStr.charCodeAt(beforeStr.length - 1);
+        if (beforeEnd > beforeStart) {
+          const bLastChar = line.charCodeAt(beforeEnd - 1);
           // Check if last char is K, M, G, k, m, g
           if ((bLastChar >= 65 && bLastChar <= 90) || (bLastChar >= 97 && bLastChar <= 122)) {
             beforeUnitCode = bLastChar;
-            beforeVal = +(beforeStr.substring(0, beforeStr.length - 1));
+            beforeVal = +(line.substring(beforeStart, beforeEnd - 1));
           } else {
-            beforeVal = +beforeStr;
+            beforeVal = +(line.substring(beforeStart, beforeEnd));
           }
         }
 
@@ -159,15 +157,15 @@ export function parseLogFile(fileContent: string): LogData[] {
 
         // Extract substring between '->' and either '(' or ' ' (whichever comes first)
         const afterEnd = afterParen !== -1 && afterParen < afterSpace ? afterParen : afterSpace;
-        const afterStr = line.substring(arrowIndex + 2, afterEnd);
+        const afterStart = arrowIndex + 2;
 
-        if (afterStr.length > 0) {
-          const aLastChar = afterStr.charCodeAt(afterStr.length - 1);
+        if (afterEnd > afterStart) {
+          const aLastChar = line.charCodeAt(afterEnd - 1);
           if ((aLastChar >= 65 && aLastChar <= 90) || (aLastChar >= 97 && aLastChar <= 122)) {
             afterUnitCode = aLastChar;
-            afterVal = +(afterStr.substring(0, afterStr.length - 1));
+            afterVal = +(line.substring(afterStart, afterEnd - 1));
           } else {
-            afterVal = +afterStr;
+            afterVal = +(line.substring(afterStart, afterEnd));
           }
         }
 

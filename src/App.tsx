@@ -98,20 +98,24 @@ function App() {
     let maxBefore = 0;
     let maxAfter = 0;
     let totalRecovered = 0;
+    let gcCount = 0;
 
     for (let i = 0; i < data.length; i++) {
       const d = data[i];
-      if (d.beforeGC !== undefined && d.beforeGC > maxBefore) maxBefore = d.beforeGC;
-      if (d.afterGC !== undefined && d.afterGC > maxAfter) maxAfter = d.afterGC;
-      if (d.beforeGC !== undefined && d.afterGC !== undefined) {
-        totalRecovered += (d.beforeGC - d.afterGC);
+      if (d.beforeGC !== undefined) {
+        if (d.beforeGC > maxBefore) maxBefore = d.beforeGC;
+        if (d.afterGC !== undefined) {
+          if (d.afterGC > maxAfter) maxAfter = d.afterGC;
+          totalRecovered += (d.beforeGC - d.afterGC);
+          gcCount++;
+        }
       }
     }
 
     return {
       maxMemoryBefore: maxBefore,
       maxMemoryAfter: maxAfter,
-      avgRecovered: (totalRecovered / data.length).toFixed(2)
+      avgRecovered: gcCount > 0 ? (totalRecovered / gcCount).toFixed(2) : 0
     };
   }, [data]);
 
