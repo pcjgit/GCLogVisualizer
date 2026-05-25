@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { UploadCloud, FileText } from 'lucide-react';
-import { parseLogFile, LogData } from './LogParser';
+import { LogData } from './LogParser';
 import './index.css';
 
 // ⚡ Bolt: Lazy load heavy chart components (which include Recharts)
@@ -16,50 +16,31 @@ function App() {
   const [fullGCTime, setFullGCTime] = useState<{ date: string, time: string, tz: string } | string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const workerRef = useRef<Worker | null>(null);
+
   const processFile = (file: File) => {
     if (!file) return;
     setFileName(file.name);
     setFullGCTime(null);
     
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      if (e.target?.result) {
-        const text = e.target.result as string;
-        const parsedData = parseLogFile(text);
-        setData(parsedData);
+    // Terminate existing worker if there's one
+    if (workerRef.current) {
+      workerRef.current.terminate();
+    }
 
-        let foundTime: { date: string, time: string, tz: string } | string | null = null;
-        const fullGcIndex = text.indexOf('Upgrade To Full GC');
-        if (fullGcIndex !== -1) {
-          const lineStartIndex = text.lastIndexOf('\n', fullGcIndex);
-          const start = lineStartIndex === -1 ? 0 : lineStartIndex + 1;
-          const line = text.substring(start, fullGcIndex);
-          const firstBracket = line.indexOf('[');
-          const closeBracket = line.indexOf(']', firstBracket);
-          if (firstBracket !== -1 && closeBracket !== -1) {
-            const timeStr = line.substring(firstBracket + 1, closeBracket);
-            const tIndex = timeStr.indexOf('T');
-            if (tIndex !== -1) {
-              const date = timeStr.substring(0, tIndex);
-              let tz = '';
-              let time = '';
-              const tzMatch = timeStr.substring(tIndex + 1).match(/([+-]\d{4}|Z)$/);
-              if (tzMatch) {
-                tz = tzMatch[1];
-                time = timeStr.substring(tIndex + 1, timeStr.length - tz.length);
-              } else {
-                time = timeStr.substring(tIndex + 1);
-              }
-              foundTime = { date, time, tz };
-            } else {
-              foundTime = timeStr;
-            }
-          }
-        }
-        setFullGCTime(foundTime);
+    const worker = new Worker(new URL('./logWorker.ts', import.meta.url), { type: 'module' });
+    workerRef.current = worker;
+
+    worker.onmessage = (e) => {
+      if (e.data.type === 'SUCCESS') {
+        setData(e.data.parsedData);
+        setFullGCTime(e.data.foundTime);
+      } else if (e.data.type === 'ERROR') {
+        console.error('Error parsing file:', e.data.error);
       }
     };
-    reader.readAsText(file);
+
+    worker.postMessage(file);
   };
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
