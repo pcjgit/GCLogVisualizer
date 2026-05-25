@@ -55,16 +55,47 @@ const GCChart = ({ data, isDownsampled = false }: GCChartProps) => {
   // Array.prototype.push() to avoid continuous internal memory reallocations in V8.
   const chartData = useMemo(() => {
     if (!data) return [];
-    const len = data.length;
-    if (!isDownsampled || len <= 2000) return data;
 
-    const step = Math.ceil(len / 2000);
-    const resultSize = Math.ceil(len / step);
+    // ⚡ Bolt: Filter out invalid entries before downsampling.
+    // GC logs contain sparse mixed events (GC and Pauses). Passing thousands of `undefined`
+    // points to Recharts forces it to process them unnecessarily, degrading main-thread performance.
+    // Downsampling without filtering also leads to inaccurate sampling gaps and visual data loss.
+
+    // Pass 1: Count valid items
+    let validCount = 0;
+    const len = data.length;
+    for (let i = 0; i < len; i++) {
+      if (data[i].beforeGC !== undefined) {
+        validCount++;
+      }
+    }
+
+    if (validCount === 0) return [];
+
+    if (!isDownsampled || validCount <= 2000) {
+      const result = new Array(validCount);
+      let idx = 0;
+      for (let i = 0; i < len; i++) {
+        if (data[i].beforeGC !== undefined) {
+          result[idx++] = data[i];
+        }
+      }
+      return result;
+    }
+
+    const step = Math.ceil(validCount / 2000);
+    const resultSize = Math.ceil(validCount / step);
     const result = new Array(resultSize);
 
+    let validSeen = 0;
     let resultIdx = 0;
-    for (let i = 0; i < len; i += step) {
-      result[resultIdx++] = data[i];
+    for (let i = 0; i < len; i++) {
+      if (data[i].beforeGC !== undefined) {
+        if (validSeen % step === 0) {
+          result[resultIdx++] = data[i];
+        }
+        validSeen++;
+      }
     }
 
     result.length = resultIdx; // Ensure exact length in case of minor division discrepancies

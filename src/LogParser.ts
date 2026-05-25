@@ -39,6 +39,12 @@ export function parseLogFile(fileContent: string): LogData[] {
   let lastTimeValue: string | number = "";
   let lastTimeLabel = "";
 
+  // ⚡ Bolt: Cache formatted labels by whole second. Many log entries
+  // occur within the same second, differentiated only by milliseconds.
+  // This avoids expensive Date.getHours/Minutes/Seconds and string interpolation.
+  let lastParsedTimeSecond = -1;
+  let lastTimeSecondLabel = "";
+
   const isShenandoah = fileContent.indexOf('Shenandoah') !== -1 || fileContent.indexOf('Concurrent cleanup') !== -1;
 
   // ⚡ Bolt: Use a fast-forward string search approach instead of line-by-line parsing.
@@ -217,13 +223,24 @@ export function parseLogFile(fileContent: string): LogData[] {
          const parsedTime = Date.parse(timeValue);
          if (!isNaN(parsedTime)) {
             timeValue = parsedTime;
-            reusableDate.setTime(parsedTime);
 
-            // Optimization: Avoid slow toLocaleTimeString in massive loop
-            const h = reusableDate.getHours();
-            const m = reusableDate.getMinutes();
-            const s = reusableDate.getSeconds();
-            timeLabel = `${h < 10 ? '0' + h : h}:${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
+            // ⚡ Bolt: Check if it's the exact same second as the last parsed date
+            // to bypass expensive Date object manipulation and string formatting.
+            const timeSecond = Math.floor(parsedTime / 1000);
+            if (timeSecond === lastParsedTimeSecond) {
+              timeLabel = lastTimeSecondLabel;
+            } else {
+              reusableDate.setTime(parsedTime);
+
+              // Optimization: Avoid slow toLocaleTimeString in massive loop
+              const h = reusableDate.getHours();
+              const m = reusableDate.getMinutes();
+              const s = reusableDate.getSeconds();
+              timeLabel = `${h < 10 ? '0' + h : h}:${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
+
+              lastParsedTimeSecond = timeSecond;
+              lastTimeSecondLabel = timeLabel;
+            }
          }
       }
 
