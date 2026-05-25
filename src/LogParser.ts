@@ -230,13 +230,31 @@ export function parseLogFile(fileContent: string): LogData[] {
             if (timeSecond === lastParsedTimeSecond) {
               timeLabel = lastTimeSecondLabel;
             } else {
-              reusableDate.setTime(parsedTime);
+              // User request: Display time in logging timezone and include the date.
+              // For ISO-8601 like strings (e.g., 2024-05-15T15:23:45.150+0000), extract date and time directly.
+              let extractedLabel = false;
+              if (timeStr.length >= 19 && timeStr.charCodeAt(4) === 45 && timeStr.charCodeAt(7) === 45) {
+                const sep = timeStr.charCodeAt(10);
+                if (sep === 84 || sep === 32) { // 'T' or ' '
+                  const datePart = timeStr.substring(0, 10);
+                  const timePart = timeStr.substring(11, 19);
+                  timeLabel = `${datePart} ${timePart}`;
+                  extractedLabel = true;
+                }
+              }
 
-              // Optimization: Avoid slow toLocaleTimeString in massive loop
-              const h = reusableDate.getHours();
-              const m = reusableDate.getMinutes();
-              const s = reusableDate.getSeconds();
-              timeLabel = `${h < 10 ? '0' + h : h}:${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
+              if (!extractedLabel) {
+                reusableDate.setTime(parsedTime);
+
+                // Fallback for non ISO-8601 strings
+                const y = reusableDate.getFullYear();
+                const mo = reusableDate.getMonth() + 1;
+                const d = reusableDate.getDate();
+                const h = reusableDate.getHours();
+                const m = reusableDate.getMinutes();
+                const s = reusableDate.getSeconds();
+                timeLabel = `${y}-${mo < 10 ? '0' + mo : mo}-${d < 10 ? '0' + d : d} ${h < 10 ? '0' + h : h}:${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
+              }
 
               lastParsedTimeSecond = timeSecond;
               lastTimeSecondLabel = timeLabel;
