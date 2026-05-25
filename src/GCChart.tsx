@@ -61,12 +61,15 @@ const GCChart = ({ data, isDownsampled = false }: GCChartProps) => {
     // points to Recharts forces it to process them unnecessarily, degrading main-thread performance.
     // Downsampling without filtering also leads to inaccurate sampling gaps and visual data loss.
 
-    // Pass 1: Count valid items
-    let validCount = 0;
     const len = data.length;
+    // ⚡ Bolt: Further optimize by using an Int32Array to collect valid indices in a single pass,
+    // bypassing the need to iterate through the entire massive `data` array multiple times.
+    const indices = new Int32Array(len);
+    let validCount = 0;
+
     for (let i = 0; i < len; i++) {
       if (data[i].beforeGC !== undefined) {
-        validCount++;
+        indices[validCount++] = i;
       }
     }
 
@@ -74,11 +77,8 @@ const GCChart = ({ data, isDownsampled = false }: GCChartProps) => {
 
     if (!isDownsampled || validCount <= 2000) {
       const result = new Array(validCount);
-      let idx = 0;
-      for (let i = 0; i < len; i++) {
-        if (data[i].beforeGC !== undefined) {
-          result[idx++] = data[i];
-        }
+      for (let i = 0; i < validCount; i++) {
+        result[i] = data[indices[i]];
       }
       return result;
     }
@@ -87,15 +87,9 @@ const GCChart = ({ data, isDownsampled = false }: GCChartProps) => {
     const resultSize = Math.ceil(validCount / step);
     const result = new Array(resultSize);
 
-    let validSeen = 0;
     let resultIdx = 0;
-    for (let i = 0; i < len; i++) {
-      if (data[i].beforeGC !== undefined) {
-        if (validSeen % step === 0) {
-          result[resultIdx++] = data[i];
-        }
-        validSeen++;
-      }
+    for (let i = 0; i < validCount; i += step) {
+      result[resultIdx++] = data[indices[i]];
     }
 
     result.length = resultIdx; // Ensure exact length in case of minor division discrepancies
