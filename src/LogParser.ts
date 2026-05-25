@@ -17,7 +17,9 @@ const normalize = (val: number | undefined, unitCode: number | undefined) => {
   return val; // Assume M by default or no unit
 };
 
-export function parseLogFile(fileContent: string): LogData[] {
+export type FullGCTime = { date: string, time: string, tz: string } | string | null;
+
+export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime: FullGCTime } {
   // ⚡ Bolt: Avoid split('\n') to prevent massive array allocation.
   // Instead, use indexOf('\n') and substring() to process line by line.
   // In V8, substring creates a "sliced string" which is an O(1) memory operation
@@ -55,21 +57,20 @@ export function parseLogFile(fileContent: string): LogData[] {
   let searchIndex = 0;
   let nextArrow = fileContent.indexOf('->', searchIndex);
   let nextPause = fileContent.indexOf('Pause', searchIndex);
+  let nextFullGC = fileContent.indexOf('Upgrade To Full GC', searchIndex);
+  let fullGCTime: FullGCTime = null;
 
-  while (nextArrow !== -1 || nextPause !== -1) {
+  while (nextArrow !== -1 || nextPause !== -1 || nextFullGC !== -1) {
     let targetIndex = -1;
-    if (nextArrow !== -1 && nextPause !== -1) {
-        targetIndex = nextArrow < nextPause ? nextArrow : nextPause;
-    } else if (nextArrow !== -1) {
-        targetIndex = nextArrow;
-    } else {
-        targetIndex = nextPause;
-    }
+    if (nextArrow !== -1) targetIndex = nextArrow;
+    if (nextPause !== -1 && (targetIndex === -1 || nextPause < targetIndex)) targetIndex = nextPause;
+    if (nextFullGC !== -1 && (targetIndex === -1 || nextFullGC < targetIndex)) targetIndex = nextFullGC;
 
     if (targetIndex < searchIndex) {
         // Fallback safety to prevent infinite loops if something goes wrong
         if (nextArrow !== -1 && nextArrow < searchIndex) nextArrow = fileContent.indexOf('->', searchIndex);
         if (nextPause !== -1 && nextPause < searchIndex) nextPause = fileContent.indexOf('Pause', searchIndex);
+        if (nextFullGC !== -1 && nextFullGC < searchIndex) nextFullGC = fileContent.indexOf('Upgrade To Full GC', searchIndex);
         continue;
     }
 
@@ -86,6 +87,7 @@ export function parseLogFile(fileContent: string): LogData[] {
     // as we already found their exact locations in the massive fileContent string.
     const arrowIndex = (nextArrow !== -1 && nextArrow < lineEnd) ? nextArrow - lineStart : -1;
     const pauseIndex = (nextPause !== -1 && nextPause < lineEnd) ? nextPause - lineStart : -1;
+    const fullGCIndex = (nextFullGC !== -1 && nextFullGC < lineEnd) ? nextFullGC - lineStart : -1;
 
     searchIndex = lineEnd + 1; // Move search cursor past this line
 
@@ -98,11 +100,40 @@ export function parseLogFile(fileContent: string): LogData[] {
     if (nextPause !== -1 && nextPause < searchIndex) {
         nextPause = fileContent.indexOf('Pause', searchIndex);
     }
+    if (nextFullGC !== -1 && nextFullGC < searchIndex) {
+        nextFullGC = fileContent.indexOf('Upgrade To Full GC', searchIndex);
+    }
 
     let beforeVal: number | undefined, beforeUnitCode: number | undefined, afterVal: number | undefined, afterUnitCode: number | undefined;
     let pauseDurationMs: number | undefined;
     let pauseType: string | undefined;
     
+    if (fullGCIndex !== -1 && fullGCTime === null) {
+      const firstBracket = line.indexOf('[');
+      const closeBracket = line.indexOf(']', firstBracket);
+      if (firstBracket !== -1 && closeBracket !== -1) {
+        const timeStr = line.substring(firstBracket + 1, closeBracket);
+        const tIndex = timeStr.indexOf('T');
+        if (tIndex !== -1) {
+          const date = timeStr.substring(0, tIndex);
+          let tz = '';
+          let time = '';
+          const tzMatch = timeStr.substring(tIndex + 1).match(/([+-]\d{4}|Z)$/);
+          if (tzMatch) {
+            tz = tzMatch[1];
+            time = timeStr.substring(tIndex + 1, timeStr.length - tz.length);
+          } else {
+            time = timeStr.substring(tIndex + 1);
+          }
+          fullGCTime = { date, time, tz };
+        } else {
+          fullGCTime = timeStr;
+        }
+      } else {
+          fullGCTime = "Found"; // Fallback if no bracket found
+      }
+    }
+
     let isGC = arrowIndex !== -1;
 
     if (isGC && line.indexOf('etaspace') !== -1) {
@@ -313,5 +344,5 @@ export function parseLogFile(fileContent: string): LogData[] {
   // ⚡ Bolt: Trim the pre-allocated array down to its actual used size
   data.length = dataIndex;
 
-  return data;
+  return { data, fullGCTime };
 }
