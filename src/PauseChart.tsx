@@ -58,15 +58,21 @@ const PauseChart = ({ data, isDownsampled = false }: PauseChartProps) => {
   // Optimization: Memoize and use an O(K) loop instead of O(N) filter.
   // ⚡ Bolt: Eliminate intermediate arrays and Array.prototype.push()
   // to avoid V8 array resizing overhead and high memory consumption.
+  // ⚡ Bolt: Further optimize by using an Int32Array to collect valid indices in a single pass,
+  // bypassing the need to iterate through the entire massive `data` array twice.
   const chartData = useMemo(() => {
     if (!data) return [];
 
-    // Pass 1: Count valid items
-    let validCount = 0;
     const len = data.length;
+    // We don't know the exact count yet, but Int32Array is heavily optimized
+    // and storing indices avoids object allocations.
+    const indices = new Int32Array(len);
+    let validCount = 0;
+
+    // Single pass to collect indices of items that have pauseTime
     for (let i = 0; i < len; i++) {
       if (data[i].pauseTime !== undefined) {
-        validCount++;
+        indices[validCount++] = i;
       }
     }
 
@@ -74,11 +80,8 @@ const PauseChart = ({ data, isDownsampled = false }: PauseChartProps) => {
 
     if (!isDownsampled || validCount <= 2000) {
       const result = new Array(validCount);
-      let idx = 0;
-      for (let i = 0; i < len; i++) {
-        if (data[i].pauseTime !== undefined) {
-          result[idx++] = data[i];
-        }
+      for (let i = 0; i < validCount; i++) {
+        result[i] = data[indices[i]];
       }
       return result;
     }
@@ -87,15 +90,9 @@ const PauseChart = ({ data, isDownsampled = false }: PauseChartProps) => {
     const resultSize = Math.ceil(validCount / step);
     const result = new Array(resultSize);
 
-    let validSeen = 0;
     let resultIdx = 0;
-    for (let i = 0; i < len; i++) {
-      if (data[i].pauseTime !== undefined) {
-        if (validSeen % step === 0) {
-          result[resultIdx++] = data[i];
-        }
-        validSeen++;
-      }
+    for (let i = 0; i < validCount; i += step) {
+      result[resultIdx++] = data[indices[i]];
     }
 
     result.length = resultIdx; // Ensure perfectly sized array
