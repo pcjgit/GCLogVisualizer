@@ -56,26 +56,31 @@ const PauseChart = ({ data, isDownsampled = false }: PauseChartProps) => {
 
   // Sample data slightly to avoid rendering thousands of points which lags standard LineChart
   // Optimization: Memoize and use an O(K) loop instead of O(N) filter.
-  // ⚡ Bolt: Eliminate intermediate arrays and Array.prototype.push()
-  // to avoid V8 array resizing overhead and high memory consumption.
-  // ⚡ Bolt: Further optimize by using an Int32Array to collect valid indices in a single pass,
-  // bypassing the need to iterate through the entire massive `data` array twice.
-  const chartData = useMemo(() => {
-    if (!data) return [];
+  // ⚡ Bolt: Split the filtering and downsampling into two distinct useMemo hooks.
+  // The filtering pass is an O(N) operation over a potentially massive array.
+  // By isolating it from the `isDownsampled` toggle dependency, we prevent
+  // redundant full-array traversals when the user merely toggles the downsample setting.
+  const { indices, validCount } = useMemo(() => {
+    if (!data || data.length === 0) return { indices: new Int32Array(0), validCount: 0 };
 
     const len = data.length;
     // We don't know the exact count yet, but Int32Array is heavily optimized
     // and storing indices avoids object allocations.
-    const indices = new Int32Array(len);
-    let validCount = 0;
+    const idxArray = new Int32Array(len);
+    let count = 0;
 
     // Single pass to collect indices of items that have pauseTime
     for (let i = 0; i < len; i++) {
       if (data[i].pauseTime !== undefined) {
-        indices[validCount++] = i;
+        idxArray[count++] = i;
       }
     }
+    return { indices: idxArray, validCount: count };
+  }, [data]);
 
+  // ⚡ Bolt: Eliminate intermediate arrays and Array.prototype.push()
+  // to avoid V8 array resizing overhead and high memory consumption.
+  const chartData = useMemo(() => {
     if (validCount === 0) return [];
 
     if (!isDownsampled || validCount <= 2000) {
@@ -97,7 +102,7 @@ const PauseChart = ({ data, isDownsampled = false }: PauseChartProps) => {
 
     result.length = resultIdx; // Ensure perfectly sized array
     return result;
-  }, [data, isDownsampled]);
+  }, [data, isDownsampled, indices, validCount]);
 
   if (!data || data.length === 0) {
     return null; // The parent component checks length anyway, but safe fallback
