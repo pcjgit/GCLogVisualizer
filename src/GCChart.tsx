@@ -51,28 +51,31 @@ const GCChart = ({ data, isDownsampled = false }: GCChartProps) => {
 
   // Sample data slightly to avoid rendering thousands of points which lags standard LineChart
   // Optimization: Memoize and use an O(K) loop instead of O(N) filter.
-  // ⚡ Bolt: Pre-allocate the result array and assign by index instead of using
-  // Array.prototype.push() to avoid continuous internal memory reallocations in V8.
-  const chartData = useMemo(() => {
-    if (!data) return [];
+  // ⚡ Bolt: Split the filtering and downsampling into two distinct useMemo hooks.
+  // The filtering pass is an O(N) operation over a potentially massive array.
+  // By isolating it from the `isDownsampled` toggle dependency, we prevent
+  // redundant full-array traversals when the user merely toggles the downsample setting.
+  const { indices, validCount } = useMemo(() => {
+    if (!data || data.length === 0) return { indices: new Int32Array(0), validCount: 0 };
 
     // ⚡ Bolt: Filter out invalid entries before downsampling.
     // GC logs contain sparse mixed events (GC and Pauses). Passing thousands of `undefined`
     // points to Recharts forces it to process them unnecessarily, degrading main-thread performance.
-    // Downsampling without filtering also leads to inaccurate sampling gaps and visual data loss.
-
     const len = data.length;
-    // ⚡ Bolt: Further optimize by using an Int32Array to collect valid indices in a single pass,
-    // bypassing the need to iterate through the entire massive `data` array multiple times.
-    const indices = new Int32Array(len);
-    let validCount = 0;
+    const idxArray = new Int32Array(len);
+    let count = 0;
 
     for (let i = 0; i < len; i++) {
       if (data[i].beforeGC !== undefined) {
-        indices[validCount++] = i;
+        idxArray[count++] = i;
       }
     }
+    return { indices: idxArray, validCount: count };
+  }, [data]);
 
+  // ⚡ Bolt: Pre-allocate the result array and assign by index instead of using
+  // Array.prototype.push() to avoid continuous internal memory reallocations in V8.
+  const chartData = useMemo(() => {
     if (validCount === 0) return [];
 
     if (!isDownsampled || validCount <= 2000) {
@@ -94,7 +97,7 @@ const GCChart = ({ data, isDownsampled = false }: GCChartProps) => {
 
     result.length = resultIdx; // Ensure exact length in case of minor division discrepancies
     return result;
-  }, [data, isDownsampled]);
+  }, [data, isDownsampled, indices, validCount]);
 
   if (!data || data.length === 0) {
     return (

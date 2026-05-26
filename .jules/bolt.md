@@ -74,3 +74,7 @@ Codebase pattern: When extending Recharts custom tooltips (e.g., `CustomTooltip`
 Optimized downsampling loops by substituting double array passes with single Int32Array index tracker
 - To preserve the original logging timezone for display, extract date/time strings directly from ISO-8601 raw strings (e.g., using ) instead of using  object getters which implicitly convert to the browser's local timezone.
 - To preserve the original logging timezone for display, extract date/time strings directly from ISO-8601 raw strings (e.g., using \`substring()\`) instead of using \`Date\` object getters which implicitly convert to the browser's local timezone.
+
+## 2026-05-26 - [Separating O(N) Filtering from O(K) Formatting Hooks]
+**Learning:** In React components processing massive datasets, combining an O(N) filtering pass and an O(K) transformation/downsampling pass into a single `useMemo` hook dependent on multiple state variables (like a toggle) is inefficient. When the toggle state changes, the hook invalidates entirely, forcing a redundant O(N) re-calculation over the entire massive array just to apply the O(K) transformation.
+**Action:** Always split multi-step massive array processing into distinct `useMemo` hooks. Cache the result of the expensive O(N) filtering pass (e.g. valid indices) independently, so that toggling O(K) display settings (like downsampling) only re-runs the fast O(K) step.
