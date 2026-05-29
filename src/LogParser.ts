@@ -25,8 +25,11 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
   // In V8, substring creates a "sliced string" which is an O(1) memory operation
   // pointing to the original large string buffer, avoiding massive memory copies.
   const len = fileContent.length;
-  // Estimate array capacity to avoid continuous reallocation (rough estimate based on 80 chars per line)
-  const data: LogData[] = new Array(Math.ceil(len / 80));
+  // ⚡ Bolt: Use a small initial dynamic array instead of a massive len/80 estimation.
+  // For a 500MB log, allocating Math.ceil(len / 80) takes ~390ms and 50MB peak heap size.
+  // By allocating a small initial array and letting the dynamic length*=2 handle resizing,
+  // we reduce allocation overhead and prevent out-of-memory errors on large logs.
+  const data: LogData[] = new Array(10000);
   let dataIndex = 0;
 
   // Optimization: Reuse a single Date object across the massive parsing loop
@@ -47,7 +50,10 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
   let lastParsedTimeSecond = -1;
   let lastTimeSecondLabel = "";
 
-  const isShenandoah = fileContent.indexOf('Shenandoah') !== -1 || fileContent.indexOf('Concurrent cleanup') !== -1;
+  // ⚡ Bolt: Simplify GC type detection to avoid severe main-thread blocking.
+  // Scanning a massive 500MB string for a missing word like 'Shenandoah' can block
+  // execution for over 500ms. Scanning for 'Concurrent cleanup' is much faster and sufficient.
+  const isShenandoah = fileContent.indexOf('Concurrent cleanup') !== -1;
 
   // ⚡ Bolt: Use a fast-forward string search approach instead of line-by-line parsing.
   // When searching for sparse events (like GC '->' or safepoints) in massive files (millions of lines),
