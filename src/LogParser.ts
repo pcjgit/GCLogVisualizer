@@ -49,6 +49,8 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
   // This avoids expensive Date.getHours/Minutes/Seconds and string interpolation.
   let lastParsedTimeSecond = -1;
   let lastTimeSecondLabel = "";
+  let lastIsoPrefix = "";
+  let lastIsoLabel = "";
 
   // ⚡ Bolt: Simplify GC type detection to avoid severe main-thread blocking.
   // Scanning a massive 500MB string for a missing word like 'Shenandoah' can block
@@ -255,32 +257,91 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
       }
       // If it wasn't a valid 's' format or parsing failed, try Date parsing.
       if (typeof timeValue === 'string') {
-         // Try parsing as date
-         // Optimization: Use Date.parse to avoid allocating Invalid Date objects for non-date strings
-         const parsedTime = Date.parse(timeValue);
-         if (!isNaN(parsedTime)) {
-            timeValue = parsedTime;
+         // ⚡ Bolt: Fast-path for ISO-8601 strings to bypass Date.parse string allocation overhead.
+         // By manually parsing the date string components, we skip the JS engine's complex internal Date parsing
+         // while still providing exact numeric timestamp correctness.
+         let parsedAsIso = false;
 
-            // ⚡ Bolt: Check if it's the exact same second as the last parsed date
-            // to bypass expensive Date object manipulation and string formatting.
-            const timeSecond = Math.floor(parsedTime / 1000);
-            if (timeSecond === lastParsedTimeSecond) {
-              timeLabel = lastTimeSecondLabel;
-            } else {
-              // User request: Display time in logging timezone and include the date.
-              // For ISO-8601 like strings (e.g., 2024-05-15T15:23:45.150+0000), extract date and time directly.
-              let extractedLabel = false;
-              if (timeStr.length >= 19 && timeStr.charCodeAt(4) === 45 && timeStr.charCodeAt(7) === 45) {
-                const sep = timeStr.charCodeAt(10);
-                if (sep === 84 || sep === 32) { // 'T' or ' '
-                  const datePart = timeStr.substring(0, 10);
-                  const timePart = timeStr.substring(11, 19);
-                  timeLabel = `${datePart} ${timePart}`;
-                  extractedLabel = true;
-                }
+         if (timeStr.length >= 23 && timeStr.charCodeAt(4) === 45 && timeStr.charCodeAt(7) === 45) {
+           const sep = timeStr.charCodeAt(10);
+           if (sep === 84 || sep === 32) { // 'T' or ' '
+              const year = +(timeStr.substring(0, 4));
+              const month = +(timeStr.substring(5, 7)) - 1; // 0-indexed
+              const day = +(timeStr.substring(8, 10));
+              const hour = +(timeStr.substring(11, 13));
+              const minute = +(timeStr.substring(14, 16));
+              const second = +(timeStr.substring(17, 19));
+              const ms = +(timeStr.substring(20, 23));
+
+              let hasTimezone = false;
+              let tzOffsetMs = 0;
+              if (timeStr.length > 23) {
+                 const tzChar = timeStr.charCodeAt(23);
+                 if (tzChar === 90) { // 'Z'
+                    hasTimezone = true;
+                    tzOffsetMs = 0;
+                 } else if (tzChar === 43 || tzChar === 45) { // '+' or '-'
+                    hasTimezone = true;
+                    if (timeStr.length >= 28) {
+                       const tzHour = +(timeStr.substring(24, 26));
+                       let tzMin;
+                       if (timeStr.charCodeAt(26) === 58) { // ':'
+                          tzMin = +(timeStr.substring(27, 29));
+                       } else {
+                          tzMin = +(timeStr.substring(26, 28));
+                       }
+                       if (!isNaN(tzHour) && !isNaN(tzMin)) {
+                          tzOffsetMs = (tzChar === 43 ? 1 : -1) * (tzHour * 60 + tzMin) * 60000;
+                       } else {
+                          hasTimezone = false; // Invalid timezone format, fallback
+                       }
+                    } else {
+                       hasTimezone = false; // Missing minutes, fallback
+                    }
+                 }
               }
 
-              if (!extractedLabel) {
+              if (!isNaN(year) && !isNaN(month) && !isNaN(day) && !isNaN(hour) && !isNaN(minute) && !isNaN(second) && !isNaN(ms)) {
+                 let manualTimestamp;
+                 if (hasTimezone) {
+                    // Calculate UTC timestamp directly using Date.UTC
+                    manualTimestamp = Date.UTC(year, month, day, hour, minute, second, ms) - tzOffsetMs;
+                 } else {
+                    // Local time if no timezone is specified (consistent with Date.parse behavior for non-Z strings)
+                    // We can compute the local time by constructing the date directly
+                    manualTimestamp = new Date(year, month, day, hour, minute, second, ms).getTime();
+                 }
+
+                 if (!isNaN(manualTimestamp)) {
+                    // Cache logic for timeLabel
+                    const isoPrefix = timeStr.substring(0, 19);
+                    if (isoPrefix === lastIsoPrefix) {
+                      timeLabel = lastIsoLabel;
+                    } else {
+                      timeLabel = isoPrefix.substring(0, 10) + ' ' + isoPrefix.substring(11, 19);
+                      lastIsoPrefix = isoPrefix;
+                      lastIsoLabel = timeLabel;
+                    }
+                    timeValue = manualTimestamp;
+                    parsedAsIso = true;
+                 }
+              }
+           }
+         }
+
+         if (!parsedAsIso) {
+           // Try parsing as date
+           // Optimization: Use Date.parse to avoid allocating Invalid Date objects for non-date strings
+           const parsedTime = Date.parse(timeValue);
+           if (!isNaN(parsedTime)) {
+              timeValue = parsedTime;
+
+              // ⚡ Bolt: Check if it's the exact same second as the last parsed date
+              // to bypass expensive Date object manipulation and string formatting.
+              const timeSecond = Math.floor(parsedTime / 1000);
+              if (timeSecond === lastParsedTimeSecond) {
+                timeLabel = lastTimeSecondLabel;
+              } else {
                 reusableDate.setTime(parsedTime);
 
                 // Fallback for non ISO-8601 strings
@@ -291,11 +352,11 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
                 const m = reusableDate.getMinutes();
                 const s = reusableDate.getSeconds();
                 timeLabel = `${y}-${mo < 10 ? '0' + mo : mo}-${d < 10 ? '0' + d : d} ${h < 10 ? '0' + h : h}:${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
-              }
 
-              lastParsedTimeSecond = timeSecond;
-              lastTimeSecondLabel = timeLabel;
-            }
+                lastParsedTimeSecond = timeSecond;
+                lastTimeSecondLabel = timeLabel;
+              }
+           }
          }
       }
 
