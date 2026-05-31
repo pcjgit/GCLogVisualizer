@@ -78,3 +78,12 @@ Optimized downsampling loops by substituting double array passes with single Int
 ## 2026-05-26 - [Separating O(N) Filtering from O(K) Formatting Hooks]
 **Learning:** In React components processing massive datasets, combining an O(N) filtering pass and an O(K) transformation/downsampling pass into a single `useMemo` hook dependent on multiple state variables (like a toggle) is inefficient. When the toggle state changes, the hook invalidates entirely, forcing a redundant O(N) re-calculation over the entire massive array just to apply the O(K) transformation.
 **Action:** Always split multi-step massive array processing into distinct `useMemo` hooks. Cache the result of the expensive O(N) filtering pass (e.g. valid indices) independently, so that toggling O(K) display settings (like downsampling) only re-runs the fast O(K) step.
+## 2026-05-30 - Fast-Path Date Parsing
+**Learning:** In V8, `Date.parse()` for ISO-8601 strings causes significant performance overhead in hot parsing loops. Bypassing it by manually extracting characters using `charCodeAt()` and calculating the numeric timestamp via `Date.UTC()` reduces parse time by ~50%.
+**Action:** When parsing millions of ISO-8601 strings, implement a fast-path integer math extractor, and fall back to `Date.parse()` only if the string doesn't match the expected format or fails to parse.
+## 2026-05-30 - Fast-Path Date Parsing Bug
+**Learning:** When implementing fast-path parsing using , you must strictly validate format boundaries. Assuming an offset like  without validating the lack of a colon separator () causes severe silent data corruption, as the char code for  is mathematically evaluated as a digit.
+**Action:** Ensure fast-path fallback guards are bulletproof against all valid alternative formats (e.g. ISO-8601 extended format colons).
+## 2026-05-30 - Fast-Path Date Parsing Bug
+**Learning:** When implementing fast-path parsing using charCodeAt, you must strictly validate format boundaries. Assuming an offset like +HHMM without validating the lack of a colon separator (+00:00) causes severe silent data corruption, as the char code for colon is mathematically evaluated as a digit.
+**Action:** Ensure fast-path fallback guards are bulletproof against all valid alternative formats (e.g. ISO-8601 extended format colons).
