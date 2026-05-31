@@ -179,12 +179,30 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
           const date = timeStr.substring(0, tIndex);
           let tz = '';
           let time = '';
-          const tzMatch = timeStr.substring(tIndex + 1).match(/([+-]\d{4}|Z)$/);
-          if (tzMatch) {
-            tz = tzMatch[1];
-            time = timeStr.substring(tIndex + 1, timeStr.length - tz.length);
+
+          const len = timeStr.length;
+          // ⚡ Bolt: Fast string extraction for timezone, avoiding expensive RegExp
+          if (timeStr.charCodeAt(len - 1) === 90) { // 'Z'
+            tz = 'Z';
+            time = timeStr.substring(tIndex + 1, len - 1);
           } else {
-            time = timeStr.substring(tIndex + 1);
+            let signPos = len - 5;
+            // Handle +HH:MM format
+            if (timeStr.charCodeAt(len - 3) === 58) { // ':'
+              signPos = len - 6;
+            }
+
+            if (signPos > tIndex) {
+              const signCode = timeStr.charCodeAt(signPos);
+              if (signCode === 43 || signCode === 45) { // '+' or '-'
+                tz = timeStr.substring(signPos);
+                time = timeStr.substring(tIndex + 1, signPos);
+              } else {
+                time = timeStr.substring(tIndex + 1);
+              }
+            } else {
+              time = timeStr.substring(tIndex + 1);
+            }
           }
           fullGCTime = { date, time, tz };
         } else {
