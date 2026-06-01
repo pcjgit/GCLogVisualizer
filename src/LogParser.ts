@@ -179,13 +179,39 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
           const date = timeStr.substring(0, tIndex);
           let tz = '';
           let time = '';
-          const tzMatch = timeStr.substring(tIndex + 1).match(/([+-]\d{4}|Z)$/);
-          if (tzMatch) {
-            tz = tzMatch[1];
-            time = timeStr.substring(tIndex + 1, timeStr.length - tz.length);
+
+          // ⚡ Bolt: Fast-path for timezone extraction
+          // Replace slow RegExp matching with fast charCodeAt bounds checking.
+          const lastChar = timeStr.charCodeAt(timeStr.length - 1);
+          if (lastChar === 90) { // 'Z'
+            tz = 'Z';
+            time = timeStr.substring(tIndex + 1, timeStr.length - 1);
           } else {
-            time = timeStr.substring(tIndex + 1);
+            if (timeStr.length >= tIndex + 6) {
+              const signChar = timeStr.charCodeAt(timeStr.length - 5);
+              if (signChar === 43 || signChar === 45) { // '+' or '-'
+                let isDigits = true;
+                for (let i = 1; i <= 4; i++) {
+                  const code = timeStr.charCodeAt(timeStr.length - 5 + i);
+                  if (code < 48 || code > 57) {
+                    isDigits = false;
+                    break;
+                  }
+                }
+                if (isDigits) {
+                  tz = timeStr.substring(timeStr.length - 5);
+                  time = timeStr.substring(tIndex + 1, timeStr.length - 5);
+                } else {
+                  time = timeStr.substring(tIndex + 1);
+                }
+              } else {
+                time = timeStr.substring(tIndex + 1);
+              }
+            } else {
+              time = timeStr.substring(tIndex + 1);
+            }
           }
+
           fullGCTime = { date, time, tz };
         } else {
           fullGCTime = timeStr;
