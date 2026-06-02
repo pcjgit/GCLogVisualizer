@@ -74,6 +74,8 @@ const parseISO8601FastPath = (timeValue: string): number => {
 
 export type FullGCTime = { date: string, time: string, tz: string } | string | null;
 
+const tzRegex = /([+-]\d{4}|Z)$/;
+
 export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime: FullGCTime } {
   // ⚡ Bolt: Avoid split('\n') to prevent massive array allocation.
   // Instead, use indexOf('\n') and substring() to process line by line.
@@ -179,13 +181,19 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
           const date = timeStr.substring(0, tIndex);
           let tz = '';
           let time = '';
-          const tzMatch = timeStr.substring(tIndex + 1).match(/([+-]\d{4}|Z)$/);
+
+          // ⚡ Bolt: Use RegExp.prototype.exec instead of String.prototype.match
+          // for timezone extraction in the hot loop, which avoids allocating an
+          // unnecessary array of matches when there's no match. RegExp is hoisted out.
+          const timeTzStr = timeStr.substring(tIndex + 1);
+          const tzMatch = tzRegex.exec(timeTzStr);
           if (tzMatch) {
             tz = tzMatch[1];
-            time = timeStr.substring(tIndex + 1, timeStr.length - tz.length);
+            time = timeTzStr.substring(0, timeTzStr.length - tz.length);
           } else {
-            time = timeStr.substring(tIndex + 1);
+            time = timeTzStr;
           }
+
           fullGCTime = { date, time, tz };
         } else {
           fullGCTime = timeStr;
