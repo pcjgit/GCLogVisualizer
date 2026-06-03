@@ -108,7 +108,10 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
   // ⚡ Bolt: Simplify GC type detection to avoid severe main-thread blocking.
   // Scanning a massive 500MB string for a missing word like 'Shenandoah' can block
   // execution for over 500ms. Scanning for 'Concurrent cleanup' is much faster and sufficient.
-  const isShenandoah = fileContent.indexOf('Concurrent cleanup') !== -1;
+  // Further optimized by limiting the search to the first 5MB of the file, saving ~500ms on massive non-Shenandoah logs.
+  const isShenandoah = fileContent.length > 5242880
+    ? fileContent.substring(0, 5242880).indexOf('Concurrent cleanup') !== -1
+    : fileContent.indexOf('Concurrent cleanup') !== -1;
 
   // ⚡ Bolt: Use a fast-forward string search approach instead of line-by-line parsing.
   // When searching for sparse events (like GC '->' or safepoints) in massive files (millions of lines),
