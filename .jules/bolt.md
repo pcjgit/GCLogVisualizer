@@ -87,3 +87,7 @@ Optimized downsampling loops by substituting double array passes with single Int
 ## 2026-05-30 - Fast-Path Date Parsing Bug
 **Learning:** When implementing fast-path parsing using charCodeAt, you must strictly validate format boundaries. Assuming an offset like +HHMM without validating the lack of a colon separator (+00:00) causes severe silent data corruption, as the char code for colon is mathematically evaluated as a digit.
 **Action:** Ensure fast-path fallback guards are bulletproof against all valid alternative formats (e.g. ISO-8601 extended format colons).
+
+## 2024-06-03 - [Eliminating Regex for Simple String Suffix Extraction]
+**Learning:** In hot loops, parsing timezones or matching string suffixes using `RegExp.prototype.match()` (e.g., `/([+-]\d{4}|Z)$/`) incurs significant regular expression engine compilation and execution overhead. Using string bounds and `charCodeAt()` for fixed-length suffixes reduces evaluation time by over 80%.
+**Action:** Replace regular expressions used for fixed string pattern extraction with fast native string inspection functions (`charCodeAt`, index bounds checks) to drastically improve performance and minimize memory allocation overhead. Ensure rigorous boundary and ASCII format checking when implementing custom replacements to avoid silent corruption.
