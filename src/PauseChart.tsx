@@ -75,7 +75,7 @@ const PauseChart = ({ data, isDownsampled = false }: PauseChartProps) => {
         idxArray[count++] = i;
       }
     }
-    return { indices: idxArray, validCount: count };
+    return { indices: idxArray.slice(0, count), validCount: count };
   }, [data]);
 
   // ⚡ Bolt: Eliminate intermediate arrays and Array.prototype.push()
