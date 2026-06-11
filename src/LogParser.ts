@@ -1,5 +1,4 @@
 export interface LogData {
-  rawTime: string;
   timeValue: string | number;
   timeLabel: string;
   beforeGC?: number;
@@ -18,48 +17,47 @@ const normalize = (val: number | undefined, unitCode: number | undefined) => {
 };
 
 // ⚡ Bolt: Fast-path for ISO-8601 like: 2024-05-15T15:23:45.150+0000
-// Avoids expensive Date.parse() for the most common JVM log format, saving ~50%
-// date parsing time by manually extracting characters and computing Date.UTC.
-const parseISO8601FastPath = (timeValue: string): number => {
-  if (timeValue.length >= 23 && timeValue.charCodeAt(4) === 45 && timeValue.charCodeAt(7) === 45) {
-    const sep = timeValue.charCodeAt(10);
+// Avoids expensive Date.parse() for the most common JVM log format.
+// Optimized to accept (str, start, end) to bypass intermediate substring allocations.
+const parseISO8601FastPath = (str: string, start: number, end: number): number => {
+  const length = end - start;
+  if (length >= 23 && str.charCodeAt(start + 4) === 45 && str.charCodeAt(start + 7) === 45) {
+    const sep = str.charCodeAt(start + 10);
     if (sep === 84 || sep === 32) { // 'T' or ' '
-      const year = (timeValue.charCodeAt(0) - 48) * 1000 +
-                   (timeValue.charCodeAt(1) - 48) * 100 +
-                   (timeValue.charCodeAt(2) - 48) * 10 +
-                   (timeValue.charCodeAt(3) - 48);
-      const month = (timeValue.charCodeAt(5) - 48) * 10 +
-                    (timeValue.charCodeAt(6) - 48) - 1;
-      const day = (timeValue.charCodeAt(8) - 48) * 10 +
-                  (timeValue.charCodeAt(9) - 48);
-      const hour = (timeValue.charCodeAt(11) - 48) * 10 +
-                   (timeValue.charCodeAt(12) - 48);
-      const minute = (timeValue.charCodeAt(14) - 48) * 10 +
-                     (timeValue.charCodeAt(15) - 48);
-      const second = (timeValue.charCodeAt(17) - 48) * 10 +
-                     (timeValue.charCodeAt(18) - 48);
+      const year = (str.charCodeAt(start + 0) - 48) * 1000 +
+                   (str.charCodeAt(start + 1) - 48) * 100 +
+                   (str.charCodeAt(start + 2) - 48) * 10 +
+                   (str.charCodeAt(start + 3) - 48);
+      const month = (str.charCodeAt(start + 5) - 48) * 10 +
+                    (str.charCodeAt(start + 6) - 48) - 1;
+      const day = (str.charCodeAt(start + 8) - 48) * 10 +
+                  (str.charCodeAt(start + 9) - 48);
+      const hour = (str.charCodeAt(start + 11) - 48) * 10 +
+                   (str.charCodeAt(start + 12) - 48);
+      const minute = (str.charCodeAt(start + 14) - 48) * 10 +
+                     (str.charCodeAt(start + 15) - 48);
+      const second = (str.charCodeAt(start + 17) - 48) * 10 +
+                     (str.charCodeAt(start + 18) - 48);
 
       let ms = 0;
       let tzOffsetMs = 0;
       let i = 19;
 
-      if (timeValue.charCodeAt(i) === 46) { // '.'
-         ms = (timeValue.charCodeAt(20) - 48) * 100 +
-              (timeValue.charCodeAt(21) - 48) * 10 +
-              (timeValue.charCodeAt(22) - 48);
+      if (str.charCodeAt(start + i) === 46) { // '.'
+         ms = (str.charCodeAt(start + 20) - 48) * 100 +
+              (str.charCodeAt(start + 21) - 48) * 10 +
+              (str.charCodeAt(start + 22) - 48);
          i = 23;
       }
 
-      const tzSign = timeValue.charCodeAt(i);
+      const tzSign = str.charCodeAt(start + i);
       if (tzSign === 43 || tzSign === 45) { // '+' or '-'
          // Verify timezone is in +HHMM / -HHMM format without colon
-         // If there's a colon (e.g. +00:00), we fallback to Date.parse
-         // because charCodeAt would incorrectly treat ':' as a digit.
-         if (timeValue.length >= i + 5 && timeValue.charCodeAt(i + 3) !== 58) { // 58 is ':'
-             const tzHour = (timeValue.charCodeAt(i + 1) - 48) * 10 +
-                            (timeValue.charCodeAt(i + 2) - 48);
-             const tzMin = (timeValue.charCodeAt(i + 3) - 48) * 10 +
-                           (timeValue.charCodeAt(i + 4) - 48);
+         if (length >= i + 5 && str.charCodeAt(start + i + 3) !== 58) { // 58 is ':'
+             const tzHour = (str.charCodeAt(start + i + 1) - 48) * 10 +
+                            (str.charCodeAt(start + i + 2) - 48);
+             const tzMin = (str.charCodeAt(start + i + 3) - 48) * 10 +
+                           (str.charCodeAt(start + i + 4) - 48);
              tzOffsetMs = (tzHour * 60 + tzMin) * 60000;
              let parsedTime = Date.UTC(year, month, day, hour, minute, second, ms);
              if (tzSign === 43) parsedTime -= tzOffsetMs;
@@ -289,18 +287,24 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
       }
     }
 
-    const timeStr = line.substring(firstBracketIndex + 1, closingBracketIndex);
-    let timeValue: string | number = timeStr;
-    let timeLabel = timeStr;
+    const globalTimeStart = lineStart + firstBracketIndex + 1;
+    const globalTimeEnd = lineStart + closingBracketIndex;
 
-    if (timeStr === lastTimeStr) {
+    let timeValue: string | number;
+    let timeLabel: string;
+
+    // ⚡ Bolt: Use startsWith to check for repeated timestamps without allocating a new string.
+    // JVM logs often have many entries in the same millisecond. This bypasses
+    // hundreds of thousands of redundant substring() calls in large files.
+    if (lastTimeStr && fileContent.startsWith(lastTimeStr, globalTimeStart) && (globalTimeEnd - globalTimeStart) === lastTimeStr.length) {
       timeValue = lastTimeValue;
       timeLabel = lastTimeLabel;
-    } else if (typeof timeValue === 'string') {
+    } else {
+      const timeStr = fileContent.substring(globalTimeStart, globalTimeEnd);
+      timeValue = timeStr;
+      timeLabel = timeStr;
+
       // Check if relative time like "10.23s"
-      // ⚡ Bolt: Fast extraction using substring before casting with unary `+`
-      // because +("10.23s") evaluates to NaN, whereas parseFloat("10.23s") parses it correctly.
-      // Additionally, charCodeAt/index checking is ~6x faster than endsWith() in hot loops.
       if (timeValue.charCodeAt(timeValue.length - 1) === 115) { // 's'
          const numericPart = +(timeValue.substring(0, timeValue.length - 1));
          if (!isNaN(numericPart)) {
@@ -308,27 +312,24 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
            timeLabel = `${timeValue}s`;
          }
       }
+
       // If it wasn't a valid 's' format or parsing failed, try Date parsing.
       if (typeof timeValue === 'string') {
-         let parsedTime = parseISO8601FastPath(timeValue);
+         let parsedTime = parseISO8601FastPath(fileContent, globalTimeStart, globalTimeEnd);
 
          if (isNaN(parsedTime)) {
              // Fallback for non-ISO-8601 strings
-             // Optimization: Use Date.parse to avoid allocating Invalid Date objects for non-date strings
              parsedTime = Date.parse(timeValue);
          }
 
          if (!isNaN(parsedTime)) {
             timeValue = parsedTime;
 
-            // ⚡ Bolt: Check if it's the exact same second as the last parsed date
-            // to bypass expensive Date object manipulation and string formatting.
             const timeSecond = Math.floor(parsedTime / 1000);
             if (timeSecond === lastParsedTimeSecond) {
               timeLabel = lastTimeSecondLabel;
             } else {
               // User request: Display time in logging timezone and include the date.
-              // For ISO-8601 like strings (e.g., 2024-05-15T15:23:45.150+0000), extract date and time directly.
               let extractedLabel = false;
               if (timeStr.length >= 19 && timeStr.charCodeAt(4) === 45 && timeStr.charCodeAt(7) === 45) {
                 const sep = timeStr.charCodeAt(10);
@@ -343,7 +344,6 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
               if (!extractedLabel) {
                 reusableDate.setTime(parsedTime);
 
-                // Fallback for non ISO-8601 strings
                 const y = reusableDate.getFullYear();
                 const mo = reusableDate.getMonth() + 1;
                 const d = reusableDate.getDate();
@@ -373,7 +373,6 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
     }
 
     const logEntry: LogData = {
-      rawTime: timeStr,
       timeValue,
       timeLabel,
     };

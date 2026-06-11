@@ -70,7 +70,7 @@ const GCChart = ({ data, isDownsampled = false }: GCChartProps) => {
         idxArray[count++] = i;
       }
     }
-    return { indices: idxArray, validCount: count };
+    return { indices: idxArray.slice(0, count), validCount: count };
   }, [data]);
 
   // ⚡ Bolt: Pre-allocate the result array and assign by index instead of using
