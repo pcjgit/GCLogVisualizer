@@ -49,41 +49,14 @@ const GCChart = ({ data, isDownsampled = false }: GCChartProps) => {
     }
   };
 
-  // Sample data slightly to avoid rendering thousands of points which lags standard LineChart
-  // Optimization: Memoize and use an O(K) loop instead of O(N) filter.
-  // ⚡ Bolt: Split the filtering and downsampling into two distinct useMemo hooks.
-  // The filtering pass is an O(N) operation over a potentially massive array.
-  // By isolating it from the `isDownsampled` toggle dependency, we prevent
-  // redundant full-array traversals when the user merely toggles the downsample setting.
-  const { indices, validCount } = useMemo(() => {
-    if (!data || data.length === 0) return { indices: new Int32Array(0), validCount: 0 };
-
-    // ⚡ Bolt: Filter out invalid entries before downsampling.
-    // GC logs contain sparse mixed events (GC and Pauses). Passing thousands of `undefined`
-    // points to Recharts forces it to process them unnecessarily, degrading main-thread performance.
-    const len = data.length;
-    const idxArray = new Int32Array(len);
-    let count = 0;
-
-    for (let i = 0; i < len; i++) {
-      if (data[i].beforeGC !== undefined) {
-        idxArray[count++] = i;
-      }
-    }
-    return { indices: idxArray.slice(0, count), validCount: count };
-  }, [data]);
-
-  // ⚡ Bolt: Pre-allocate the result array and assign by index instead of using
-  // Array.prototype.push() to avoid continuous internal memory reallocations in V8.
+  // ⚡ Bolt: Data is now pre-filtered in the worker.
+  // We can remove the expensive O(N) filtering pass and go straight to downsampling.
   const chartData = useMemo(() => {
-    if (validCount === 0) return [];
+    if (!data || data.length === 0) return [];
 
+    const validCount = data.length;
     if (!isDownsampled || validCount <= 2000) {
-      const result = new Array(validCount);
-      for (let i = 0; i < validCount; i++) {
-        result[i] = data[indices[i]];
-      }
-      return result;
+      return data;
     }
 
     const step = Math.ceil(validCount / 2000);
@@ -92,12 +65,12 @@ const GCChart = ({ data, isDownsampled = false }: GCChartProps) => {
 
     let resultIdx = 0;
     for (let i = 0; i < validCount; i += step) {
-      result[resultIdx++] = data[indices[i]];
+      result[resultIdx++] = data[i];
     }
 
-    result.length = resultIdx; // Ensure exact length in case of minor division discrepancies
+    result.length = resultIdx;
     return result;
-  }, [data, isDownsampled, indices, validCount]);
+  }, [data, isDownsampled]);
 
   if (!data || data.length === 0) {
     return (
@@ -180,4 +153,3 @@ const GCChart = ({ data, isDownsampled = false }: GCChartProps) => {
 // Optimization: Memoize the chart component to prevent expensive re-renders
 // when parent App state changes (e.g. during drag-and-drop 'isDragging' toggles)
 export default React.memo(GCChart);
-
