@@ -89,9 +89,12 @@ const parseISO8601FastPath = (str: string, start: number, end: number): number =
 export function parseLogFile(fileContent: string): ParseResult {
   const len = fileContent.length;
 
-  const gcData: LogData[] = new Array(10000);
+  // ⚡ Bolt: Pre-allocate arrays with a more realistic initial capacity based on file size
+  // to minimize expensive V8 array reallocations. A typical JVM log line is ~100-200 chars.
+  const estimatedEntries = Math.max(1000, Math.floor(len / 200));
+  const gcData: LogData[] = new Array(estimatedEntries);
   let gcDataIndex = 0;
-  const pauseData: LogData[] = new Array(10000);
+  const pauseData: LogData[] = new Array(estimatedEntries);
   let pauseDataIndex = 0;
   let totalParsed = 0;
 
@@ -346,18 +349,20 @@ export function parseLogFile(fileContent: string): ParseResult {
     const beforeMB = normalize(beforeVal, beforeUnitCode);
     const afterMB = normalize(afterVal, afterUnitCode);
 
-    const logEntry: LogData = {
-      timeValue,
-      timeLabel,
-    };
-
     let hasAnyDataForThisLine = false;
 
     if (isGC && beforeMB !== undefined && afterMB !== undefined) {
       const bRounded = Math.round(beforeMB * 100) / 100;
       const aRounded = Math.round(afterMB * 100) / 100;
 
-      const gcEntry = { ...logEntry, beforeGC: bRounded, afterGC: aRounded };
+      // ⚡ Bolt: Eliminate object spread and create objects directly.
+      // This reduces object allocations and CPU overhead in hot loops.
+      const gcEntry: LogData = {
+        timeValue,
+        timeLabel,
+        beforeGC: bRounded,
+        afterGC: aRounded
+      };
 
       if (gcDataIndex >= gcData.length) gcData.length *= 2;
       gcData[gcDataIndex++] = gcEntry;
@@ -373,7 +378,13 @@ export function parseLogFile(fileContent: string): ParseResult {
     if (pauseDurationMs !== undefined) {
       const trimmedType = pauseType ? pauseType.trim() : "";
       if (trimmedType !== "" && trimmedType !== "Pause") {
-        const pauseEntry = { ...logEntry, pauseTime: pauseDurationMs, pauseType: trimmedType };
+        // ⚡ Bolt: Direct object creation instead of spread operator.
+        const pauseEntry: LogData = {
+          timeValue,
+          timeLabel,
+          pauseTime: pauseDurationMs,
+          pauseType: trimmedType
+        };
 
         if (pauseDataIndex >= pauseData.length) pauseData.length *= 2;
         pauseData[pauseDataIndex++] = pauseEntry;

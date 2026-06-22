@@ -91,3 +91,11 @@ Optimized downsampling loops by substituting double array passes with single Int
 ## 2024-11-20 - [Optimize Global String Search for Sparse Keywords]
 **Learning:** Using `String.prototype.indexOf()` on massive multi-megabyte strings to search for sparse or missing keywords can block the main thread for >500ms when the keyword is absent (e.g. searching for a specific garbage collector type in another GC's logs).
 **Action:** Always bound global string searches for classification keywords by using `substring(0, MAX_EXPECTED_LENGTH).indexOf()` when analyzing massive files, ensuring that the lookup takes < 1ms even for non-matching cases.
+
+## 2026-06-19 - [Restoring Safety Checks in Fast-Forward Loops]
+**Learning:** Removing index refresh logic like `if (targetIndex < searchIndex)` in a fast-forward parser loop can lead to infinite loops or duplicate processing when multiple keywords exist on the same line. Even if pointers are synchronized at the end of the loop, the initial search results from before the loop started might fall behind the cursor as it advances.
+**Action:** Always retain safety checks that refresh search pointers (`indexOf`) if they fall behind the current processing cursor to maintain parser robustness.
+
+## 2026-06-19 - [Object Creation Optimization in Hot Loops]
+**Learning:** In V8, using the object spread operator (`...`) in extremely hot loops significantly increases GC churn and CPU overhead due to intermediate object allocations. Direct property initialization is significantly faster and more predictable for the JIT compiler.
+**Action:** Replace object spread with direct property initialization in high-frequency parsing loops to reduce memory pressure.
