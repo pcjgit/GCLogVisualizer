@@ -145,11 +145,9 @@ export function parseLogFile(fileContent: string): ParseResult {
     let lineEnd = fileContent.indexOf('\n', targetIndex);
     if (lineEnd === -1) lineEnd = len;
 
-    const line = fileContent.substring(lineStart, lineEnd);
-
-    const gcKeywordIndex = (nextGC !== -1 && nextGC < lineEnd) ? nextGC - lineStart : -1;
-    const pauseIndex = (nextPause !== -1 && nextPause < lineEnd) ? nextPause - lineStart : -1;
-    const fullGCIndex = (nextFullGC !== -1 && nextFullGC < lineEnd) ? nextFullGC - lineStart : -1;
+    const gcKeywordGlobalIndex = (nextGC !== -1 && nextGC < lineEnd) ? nextGC : -1;
+    const pauseGlobalIndex = (nextPause !== -1 && nextPause < lineEnd) ? nextPause : -1;
+    const fullGCGlobalIndex = (nextFullGC !== -1 && nextFullGC < lineEnd) ? nextFullGC : -1;
 
     searchIndex = lineEnd + 1;
 
@@ -167,11 +165,11 @@ export function parseLogFile(fileContent: string): ParseResult {
     let pauseDurationMs: number | undefined;
     let pauseType: string | undefined;
     
-    if (fullGCIndex !== -1 && fullGCTime === null) {
-      const firstBracket = line.indexOf('[');
-      const closeBracket = line.indexOf(']', firstBracket);
-      if (firstBracket !== -1 && closeBracket !== -1) {
-        const timeStr = line.substring(firstBracket + 1, closeBracket);
+    if (fullGCGlobalIndex !== -1 && fullGCTime === null) {
+      const firstBracket = fileContent.indexOf('[', lineStart);
+      const closeBracket = fileContent.indexOf(']', firstBracket);
+      if (firstBracket !== -1 && closeBracket !== -1 && closeBracket < lineEnd) {
+        const timeStr = fileContent.substring(firstBracket + 1, closeBracket);
         const tIndex = timeStr.indexOf('T');
         if (tIndex !== -1) {
           const date = timeStr.substring(0, tIndex);
@@ -193,59 +191,62 @@ export function parseLogFile(fileContent: string): ParseResult {
       }
     }
 
-    let isGC = gcKeywordIndex !== -1;
+    let isGC = gcKeywordGlobalIndex !== -1;
 
     // Additional filtering for Metaspace lines
-    if (isGC && line.indexOf('etaspace') !== -1) {
-        isGC = false;
+    if (isGC) {
+        const etaspaceIndex = fileContent.indexOf('etaspace', lineStart);
+        if (etaspaceIndex !== -1 && etaspaceIndex < lineEnd) {
+            isGC = false;
+        }
     }
 
-    const isPause = pauseIndex !== -1;
+    const isPause = pauseGlobalIndex !== -1;
     
     if (!isGC && !isPause) {
       continue;
     }
 
-    const firstBracketIndex = line.indexOf('[');
-    const closingBracketIndex = line.indexOf(']', firstBracketIndex);
-    if (firstBracketIndex === -1 || closingBracketIndex === -1) {
+    const firstBracketIndex = fileContent.indexOf('[', lineStart);
+    const closingBracketIndex = fileContent.indexOf(']', firstBracketIndex);
+    if (firstBracketIndex === -1 || closingBracketIndex === -1 || closingBracketIndex > lineEnd) {
       continue;
     }
 
     if (isGC) {
       // Find the actual arrow if we used a keyword search
-      const arrowIndex = line.indexOf('->', gcKeywordIndex);
-      if (arrowIndex !== -1) {
-        const spaceBeforeIndex = line.lastIndexOf(' ', arrowIndex - 1);
-        const beforeStart = spaceBeforeIndex === -1 ? 0 : spaceBeforeIndex + 1;
+      const arrowIndex = fileContent.indexOf('->', gcKeywordGlobalIndex);
+      if (arrowIndex !== -1 && arrowIndex < lineEnd) {
+        const spaceBeforeIndex = fileContent.lastIndexOf(' ', arrowIndex - 1);
+        const beforeStart = (spaceBeforeIndex === -1 || spaceBeforeIndex < lineStart) ? lineStart : spaceBeforeIndex + 1;
 
-        const bParen = line.indexOf('(', beforeStart);
-        const beforeEnd = bParen !== -1 && bParen < arrowIndex ? bParen : arrowIndex;
+        const bParen = fileContent.indexOf('(', beforeStart);
+        const beforeEnd = (bParen !== -1 && bParen < arrowIndex) ? bParen : arrowIndex;
 
         if (beforeEnd > beforeStart) {
-          const bLastChar = line.charCodeAt(beforeEnd - 1);
+          const bLastChar = fileContent.charCodeAt(beforeEnd - 1);
           if ((bLastChar >= 65 && bLastChar <= 90) || (bLastChar >= 97 && bLastChar <= 122)) {
             beforeUnitCode = bLastChar;
-            beforeVal = +(line.substring(beforeStart, beforeEnd - 1));
+            beforeVal = +(fileContent.substring(beforeStart, beforeEnd - 1));
           } else {
-            beforeVal = +(line.substring(beforeStart, beforeEnd));
+            beforeVal = +(fileContent.substring(beforeStart, beforeEnd));
           }
         }
 
-        const afterParen = line.indexOf('(', arrowIndex);
-        let afterSpace = line.indexOf(' ', arrowIndex);
-        if (afterSpace === -1) afterSpace = line.length;
+        const afterParen = fileContent.indexOf('(', arrowIndex);
+        let afterSpace = fileContent.indexOf(' ', arrowIndex);
+        if (afterSpace === -1 || afterSpace > lineEnd) afterSpace = lineEnd;
 
-        const afterEnd = afterParen !== -1 && afterParen < afterSpace ? afterParen : afterSpace;
+        const afterEnd = (afterParen !== -1 && afterParen < afterSpace) ? afterParen : afterSpace;
         const afterStart = arrowIndex + 2;
 
         if (afterEnd > afterStart) {
-          const aLastChar = line.charCodeAt(afterEnd - 1);
+          const aLastChar = fileContent.charCodeAt(afterEnd - 1);
           if ((aLastChar >= 65 && aLastChar <= 90) || (aLastChar >= 97 && aLastChar <= 122)) {
             afterUnitCode = aLastChar;
-            afterVal = +(line.substring(afterStart, afterEnd - 1));
+            afterVal = +(fileContent.substring(afterStart, afterEnd - 1));
           } else {
-            afterVal = +(line.substring(afterStart, afterEnd));
+            afterVal = +(fileContent.substring(afterStart, afterEnd));
           }
         }
 
@@ -258,12 +259,12 @@ export function parseLogFile(fileContent: string): ParseResult {
     }
 
     if (isPause) {
-      const msEndIndex = line.lastIndexOf('ms');
-      if (msEndIndex !== -1 && msEndIndex > pauseIndex) {
-        const spaceBeforeMs = line.lastIndexOf(' ', msEndIndex);
-        if (spaceBeforeMs !== -1) {
-          pauseDurationMs = +(line.substring(spaceBeforeMs + 1, msEndIndex));
-          pauseType = line.substring(pauseIndex, spaceBeforeMs);
+      const msEndIndex = fileContent.lastIndexOf('ms', lineEnd);
+      if (msEndIndex !== -1 && msEndIndex >= lineStart && msEndIndex > pauseGlobalIndex) {
+        const spaceBeforeMs = fileContent.lastIndexOf(' ', msEndIndex);
+        if (spaceBeforeMs !== -1 && spaceBeforeMs >= lineStart) {
+          pauseDurationMs = +(fileContent.substring(spaceBeforeMs + 1, msEndIndex));
+          pauseType = fileContent.substring(pauseGlobalIndex, spaceBeforeMs);
         } else {
           pauseDurationMs = undefined;
         }
@@ -276,8 +277,8 @@ export function parseLogFile(fileContent: string): ParseResult {
         continue;
     }
 
-    const globalTimeStart = lineStart + firstBracketIndex + 1;
-    const globalTimeEnd = lineStart + closingBracketIndex;
+    const globalTimeStart = firstBracketIndex + 1;
+    const globalTimeEnd = closingBracketIndex;
 
     let timeValue: string | number;
     let timeLabel: string;

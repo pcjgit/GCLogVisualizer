@@ -99,3 +99,7 @@ Optimized downsampling loops by substituting double array passes with single Int
 ## 2026-06-19 - [Object Creation Optimization in Hot Loops]
 **Learning:** In V8, using the object spread operator (`...`) in extremely hot loops significantly increases GC churn and CPU overhead due to intermediate object allocations. Direct property initialization is significantly faster and more predictable for the JIT compiler.
 **Action:** Replace object spread with direct property initialization in high-frequency parsing loops to reduce memory pressure.
+
+## 2026-06-20 - [Eliminating Intermediate Line Substring Allocations]
+**Learning:** In hot parsing loops processing massive files, extracting each line as a substring (`fileContent.substring(lineStart, lineEnd)`) before further processing creates millions of short-lived string objects. This puts immense pressure on the V8 garbage collector and increases peak memory usage.
+**Action:** Refactor parsing logic to operate directly on the original large string using absolute global indices and boundary checks (`lineStart`, `lineEnd`). This eliminates per-line allocations and significantly improves performance on massive inputs.
