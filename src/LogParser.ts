@@ -1,11 +1,26 @@
 export interface LogData {
-  rawTime: string;
   timeValue: string | number;
   timeLabel: string;
   beforeGC?: number;
   afterGC?: number;
   pauseTime?: number; // time in ms
   pauseType?: string;
+}
+
+export type FullGCTime = { date: string, time: string, tz: string } | string | null;
+
+export interface GCStats {
+  maxMemoryBefore: number;
+  maxMemoryAfter: number;
+  avgRecovered: string | number;
+  totalParsed: number;
+}
+
+export interface ParseResult {
+  gcData: LogData[];
+  pauseData: LogData[];
+  stats: GCStats;
+  fullGCTime: FullGCTime;
 }
 
 // Optimization: Move closure outside of massive parsing loop
@@ -18,48 +33,47 @@ const normalize = (val: number | undefined, unitCode: number | undefined) => {
 };
 
 // ⚡ Bolt: Fast-path for ISO-8601 like: 2024-05-15T15:23:45.150+0000
-// Avoids expensive Date.parse() for the most common JVM log format, saving ~50%
-// date parsing time by manually extracting characters and computing Date.UTC.
-const parseISO8601FastPath = (timeValue: string): number => {
-  if (timeValue.length >= 23 && timeValue.charCodeAt(4) === 45 && timeValue.charCodeAt(7) === 45) {
-    const sep = timeValue.charCodeAt(10);
+// Avoids expensive Date.parse() for the most common JVM log format.
+// Optimized to accept (str, start, end) to bypass intermediate substring allocations.
+const parseISO8601FastPath = (str: string, start: number, end: number): number => {
+  const length = end - start;
+  if (length >= 23 && str.charCodeAt(start + 4) === 45 && str.charCodeAt(start + 7) === 45) {
+    const sep = str.charCodeAt(start + 10);
     if (sep === 84 || sep === 32) { // 'T' or ' '
-      const year = (timeValue.charCodeAt(0) - 48) * 1000 +
-                   (timeValue.charCodeAt(1) - 48) * 100 +
-                   (timeValue.charCodeAt(2) - 48) * 10 +
-                   (timeValue.charCodeAt(3) - 48);
-      const month = (timeValue.charCodeAt(5) - 48) * 10 +
-                    (timeValue.charCodeAt(6) - 48) - 1;
-      const day = (timeValue.charCodeAt(8) - 48) * 10 +
-                  (timeValue.charCodeAt(9) - 48);
-      const hour = (timeValue.charCodeAt(11) - 48) * 10 +
-                   (timeValue.charCodeAt(12) - 48);
-      const minute = (timeValue.charCodeAt(14) - 48) * 10 +
-                     (timeValue.charCodeAt(15) - 48);
-      const second = (timeValue.charCodeAt(17) - 48) * 10 +
-                     (timeValue.charCodeAt(18) - 48);
+      const year = (str.charCodeAt(start + 0) - 48) * 1000 +
+                   (str.charCodeAt(start + 1) - 48) * 100 +
+                   (str.charCodeAt(start + 2) - 48) * 10 +
+                   (str.charCodeAt(start + 3) - 48);
+      const month = (str.charCodeAt(start + 5) - 48) * 10 +
+                    (str.charCodeAt(start + 6) - 48) - 1;
+      const day = (str.charCodeAt(start + 8) - 48) * 10 +
+                  (str.charCodeAt(start + 9) - 48);
+      const hour = (str.charCodeAt(start + 11) - 48) * 10 +
+                   (str.charCodeAt(start + 12) - 48);
+      const minute = (str.charCodeAt(start + 14) - 48) * 10 +
+                     (str.charCodeAt(start + 15) - 48);
+      const second = (str.charCodeAt(start + 17) - 48) * 10 +
+                     (str.charCodeAt(start + 18) - 48);
 
       let ms = 0;
       let tzOffsetMs = 0;
       let i = 19;
 
-      if (timeValue.charCodeAt(i) === 46) { // '.'
-         ms = (timeValue.charCodeAt(20) - 48) * 100 +
-              (timeValue.charCodeAt(21) - 48) * 10 +
-              (timeValue.charCodeAt(22) - 48);
+      if (str.charCodeAt(start + i) === 46) { // '.'
+         ms = (str.charCodeAt(start + 20) - 48) * 100 +
+              (str.charCodeAt(start + 21) - 48) * 10 +
+              (str.charCodeAt(start + 22) - 48);
          i = 23;
       }
 
-      const tzSign = timeValue.charCodeAt(i);
+      const tzSign = str.charCodeAt(start + i);
       if (tzSign === 43 || tzSign === 45) { // '+' or '-'
          // Verify timezone is in +HHMM / -HHMM format without colon
-         // If there's a colon (e.g. +00:00), we fallback to Date.parse
-         // because charCodeAt would incorrectly treat ':' as a digit.
-         if (timeValue.length >= i + 5 && timeValue.charCodeAt(i + 3) !== 58) { // 58 is ':'
-             const tzHour = (timeValue.charCodeAt(i + 1) - 48) * 10 +
-                            (timeValue.charCodeAt(i + 2) - 48);
-             const tzMin = (timeValue.charCodeAt(i + 3) - 48) * 10 +
-                           (timeValue.charCodeAt(i + 4) - 48);
+         if (length >= i + 5 && str.charCodeAt(start + i + 3) !== 58) { // 58 is ':'
+             const tzHour = (str.charCodeAt(start + i + 1) - 48) * 10 +
+                            (str.charCodeAt(start + i + 2) - 48);
+             const tzMin = (str.charCodeAt(start + i + 3) - 48) * 10 +
+                           (str.charCodeAt(start + i + 4) - 48);
              tzOffsetMs = (tzHour * 60 + tzMin) * 60000;
              let parsedTime = Date.UTC(year, month, day, hour, minute, second, ms);
              if (tzSign === 43) parsedTime -= tzOffsetMs;
@@ -72,64 +86,53 @@ const parseISO8601FastPath = (timeValue: string): number => {
   return NaN;
 };
 
-export type FullGCTime = { date: string, time: string, tz: string } | string | null;
-
-export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime: FullGCTime } {
-  // ⚡ Bolt: Avoid split('\n') to prevent massive array allocation.
-  // Instead, use indexOf('\n') and substring() to process line by line.
-  // In V8, substring creates a "sliced string" which is an O(1) memory operation
-  // pointing to the original large string buffer, avoiding massive memory copies.
+export function parseLogFile(fileContent: string): ParseResult {
   const len = fileContent.length;
-  // ⚡ Bolt: Use a small initial dynamic array instead of a massive len/80 estimation.
-  // For a 500MB log, allocating Math.ceil(len / 80) takes ~390ms and 50MB peak heap size.
-  // By allocating a small initial array and letting the dynamic length*=2 handle resizing,
-  // we reduce allocation overhead and prevent out-of-memory errors on large logs.
-  const data: LogData[] = new Array(10000);
-  let dataIndex = 0;
 
-  // Optimization: Reuse a single Date object across the massive parsing loop
-  // to prevent allocating hundreds of thousands of Date instances, which
-  // causes significant garbage collection overhead and blocks the main thread.
+  // ⚡ Bolt: Pre-allocate arrays with a more realistic initial capacity based on file size
+  // to minimize expensive V8 array reallocations. A typical JVM log line is ~100-200 chars.
+  const estimatedEntries = Math.max(1000, Math.floor(len / 200));
+  const gcData: LogData[] = new Array(estimatedEntries);
+  let gcDataIndex = 0;
+  const pauseData: LogData[] = new Array(estimatedEntries);
+  let pauseDataIndex = 0;
+  let totalParsed = 0;
+
+  let maxMemoryBefore = 0;
+  let maxMemoryAfter = 0;
+  let totalRecovered = 0;
+  let gcCount = 0;
+
   const reusableDate = new Date();
 
-  // Optimization: Cache the last parsed timestamp
-  // GC logs often contain many consecutive lines with the exact same timestamp.
-  // Caching the last parsed time avoids expensive Date.parse() and string formatting calls.
   let lastTimeStr = "";
   let lastTimeValue: string | number = "";
   let lastTimeLabel = "";
 
-  // ⚡ Bolt: Cache formatted labels by whole second. Many log entries
-  // occur within the same second, differentiated only by milliseconds.
-  // This avoids expensive Date.getHours/Minutes/Seconds and string interpolation.
   let lastParsedTimeSecond = -1;
   let lastTimeSecondLabel = "";
 
-  // ⚡ Bolt: Simplify GC type detection to avoid severe main-thread blocking.
-  // Scanning a massive 500MB string for a missing word like 'Shenandoah' can block
-  // execution for over 500ms. Scanning for 'Concurrent cleanup' is much faster and sufficient.
-  const isShenandoah = fileContent.indexOf('Concurrent cleanup') !== -1;
+  const isShenandoah = fileContent.lastIndexOf('Concurrent cleanup', 5242880) !== -1;
 
-  // ⚡ Bolt: Use a fast-forward string search approach instead of line-by-line parsing.
-  // When searching for sparse events (like GC '->' or safepoints) in massive files (millions of lines),
-  // it is >65% faster to use `indexOf` on the entire file content string to jump directly
-  // to the next relevant substring, bypassing millions of O(N) `substring` and `indexOf` calls
-  // on uninteresting lines.
+  // ⚡ Bolt: If it's Shenandoah, we only care about memory transitions on "Concurrent cleanup" lines.
+  // By searching for the keyword directly instead of generic "->", we skip thousands of irrelevant
+  // GC phase lines that don't contribute to memory visualization, significantly speeding up the skip.
+  const gcKeyword = isShenandoah ? 'Concurrent cleanup' : '->';
+
   let searchIndex = 0;
-  let nextArrow = fileContent.indexOf('->', searchIndex);
+  let nextGC = fileContent.indexOf(gcKeyword, searchIndex);
   let nextPause = fileContent.indexOf('Pause', searchIndex);
   let nextFullGC = fileContent.indexOf('Upgrade To Full GC', searchIndex);
   let fullGCTime: FullGCTime = null;
 
-  while (nextArrow !== -1 || nextPause !== -1 || nextFullGC !== -1) {
+  while (nextGC !== -1 || nextPause !== -1 || nextFullGC !== -1) {
     let targetIndex = -1;
-    if (nextArrow !== -1) targetIndex = nextArrow;
+    if (nextGC !== -1) targetIndex = nextGC;
     if (nextPause !== -1 && (targetIndex === -1 || nextPause < targetIndex)) targetIndex = nextPause;
     if (nextFullGC !== -1 && (targetIndex === -1 || nextFullGC < targetIndex)) targetIndex = nextFullGC;
 
     if (targetIndex < searchIndex) {
-        // Fallback safety to prevent infinite loops if something goes wrong
-        if (nextArrow !== -1 && nextArrow < searchIndex) nextArrow = fileContent.indexOf('->', searchIndex);
+        if (nextGC !== -1 && nextGC < searchIndex) nextGC = fileContent.indexOf(gcKeyword, searchIndex);
         if (nextPause !== -1 && nextPause < searchIndex) nextPause = fileContent.indexOf('Pause', searchIndex);
         if (nextFullGC !== -1 && nextFullGC < searchIndex) nextFullGC = fileContent.indexOf('Upgrade To Full GC', searchIndex);
         continue;
@@ -140,23 +143,16 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
     let lineEnd = fileContent.indexOf('\n', targetIndex);
     if (lineEnd === -1) lineEnd = len;
 
-    // Extract line using constant-time sliced strings
     const line = fileContent.substring(lineStart, lineEnd);
 
-    // ⚡ Bolt: Compute local indices directly from the global pointers before advancing them.
-    // This entirely eliminates two redundant O(N) line.indexOf() calls per line,
-    // as we already found their exact locations in the massive fileContent string.
-    const arrowIndex = (nextArrow !== -1 && nextArrow < lineEnd) ? nextArrow - lineStart : -1;
+    const gcKeywordIndex = (nextGC !== -1 && nextGC < lineEnd) ? nextGC - lineStart : -1;
     const pauseIndex = (nextPause !== -1 && nextPause < lineEnd) ? nextPause - lineStart : -1;
     const fullGCIndex = (nextFullGC !== -1 && nextFullGC < lineEnd) ? nextFullGC - lineStart : -1;
 
-    searchIndex = lineEnd + 1; // Move search cursor past this line
+    searchIndex = lineEnd + 1;
 
-    // ⚡ Bolt: Advance pointers to the search index simultaneously.
-    // This perfectly synchronizes both pointers and completely eliminates
-    // redundant iterations and backwards searching when a single line contains both keywords.
-    if (nextArrow !== -1 && nextArrow < searchIndex) {
-        nextArrow = fileContent.indexOf('->', searchIndex);
+    if (nextGC !== -1 && nextGC < searchIndex) {
+        nextGC = fileContent.indexOf(gcKeyword, searchIndex);
     }
     if (nextPause !== -1 && nextPause < searchIndex) {
         nextPause = fileContent.indexOf('Pause', searchIndex);
@@ -220,17 +216,14 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
           fullGCTime = timeStr;
         }
       } else {
-          fullGCTime = "Found"; // Fallback if no bracket found
+          fullGCTime = "Found";
       }
     }
 
-    let isGC = arrowIndex !== -1;
+    let isGC = gcKeywordIndex !== -1;
 
+    // Additional filtering for Metaspace lines
     if (isGC && line.indexOf('etaspace') !== -1) {
-        isGC = false;
-    }
-
-    if (isGC && isShenandoah && line.indexOf('Concurrent cleanup') === -1) {
         isGC = false;
     }
 
@@ -240,34 +233,24 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
       continue;
     }
 
-    const firstBracketIndex = line.indexOf('[');
+    const firstBracketIndex = line.charCodeAt(0) === 91 ? 0 : line.indexOf('[');
     const closingBracketIndex = line.indexOf(']', firstBracketIndex);
     if (firstBracketIndex === -1 || closingBracketIndex === -1) {
       continue;
     }
 
     if (isGC) {
-      // ⚡ Bolt: Replace regular expressions with fast string operations for parsing GC entries.
-      // String methods (indexOf, substring) are >2.5x faster than RegExp.exec() in this massive
-      // hot loop because they avoid regex engine overhead and excessive array allocations.
+      // Find the actual arrow if we used a keyword search
+      const arrowIndex = line.indexOf('->', gcKeywordIndex);
       if (arrowIndex !== -1) {
-        // Find 'before' part
-        // ⚡ Bolt: Use lastIndexOf to find the space before the GC sizes instead of a while loop.
-        // In large loops processing millions of lines, moving backwards character by character
-        // with a while loop is significantly slower than using the native C++ backed lastIndexOf.
         const spaceBeforeIndex = line.lastIndexOf(' ', arrowIndex - 1);
         const beforeStart = spaceBeforeIndex === -1 ? 0 : spaceBeforeIndex + 1;
 
-        // ZGC format includes (xx%) before the ->, Shenandoah doesn't.
-        // E.g., 2936M(18%) or 738M
-        // ⚡ Bolt: Avoid intermediate string allocations. Compute bounds entirely using integer logic
-        // on the parent string, and extract the precise required chunk with one substring call.
         const bParen = line.indexOf('(', beforeStart);
         const beforeEnd = bParen !== -1 && bParen < arrowIndex ? bParen : arrowIndex;
 
         if (beforeEnd > beforeStart) {
           const bLastChar = line.charCodeAt(beforeEnd - 1);
-          // Check if last char is K, M, G, k, m, g
           if ((bLastChar >= 65 && bLastChar <= 90) || (bLastChar >= 97 && bLastChar <= 122)) {
             beforeUnitCode = bLastChar;
             beforeVal = +(line.substring(beforeStart, beforeEnd - 1));
@@ -276,13 +259,10 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
           }
         }
 
-        // Find 'after' part
-        // Format: 674M(5928M) or 2910M(18%)
         const afterParen = line.indexOf('(', arrowIndex);
         let afterSpace = line.indexOf(' ', arrowIndex);
         if (afterSpace === -1) afterSpace = line.length;
 
-        // Extract substring between '->' and either '(' or ' ' (whichever comes first)
         const afterEnd = afterParen !== -1 && afterParen < afterSpace ? afterParen : afterSpace;
         const afterStart = arrowIndex + 2;
 
@@ -297,13 +277,14 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
         }
 
         if (beforeVal === undefined || isNaN(beforeVal) || afterVal === undefined || isNaN(afterVal)) {
-          continue;
+          isGC = false;
         }
       } else {
-        continue;
+        isGC = false;
       }
-    } else {
-      // ⚡ Bolt: Replace Regex with fast string extraction for pause time.
+    }
+
+    if (isPause) {
       const msEndIndex = line.lastIndexOf('ms');
       if (msEndIndex !== -1 && msEndIndex > pauseIndex) {
         const spaceBeforeMs = line.lastIndexOf(' ', msEndIndex);
@@ -311,53 +292,53 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
           pauseDurationMs = +(line.substring(spaceBeforeMs + 1, msEndIndex));
           pauseType = line.substring(pauseIndex, spaceBeforeMs);
         } else {
-          continue;
+          pauseDurationMs = undefined;
         }
       } else {
-        continue;
+        pauseDurationMs = undefined;
       }
     }
 
-    const timeStr = line.substring(firstBracketIndex + 1, closingBracketIndex);
-    let timeValue: string | number = timeStr;
-    let timeLabel = timeStr;
+    if (!isGC && (pauseDurationMs === undefined)) {
+        continue;
+    }
 
-    if (timeStr === lastTimeStr) {
+    const globalTimeStart = lineStart + firstBracketIndex + 1;
+    const globalTimeEnd = lineStart + closingBracketIndex;
+
+    let timeValue: string | number;
+    let timeLabel: string;
+
+    if (lastTimeStr && fileContent.startsWith(lastTimeStr, globalTimeStart) && (globalTimeEnd - globalTimeStart) === lastTimeStr.length) {
       timeValue = lastTimeValue;
       timeLabel = lastTimeLabel;
-    } else if (typeof timeValue === 'string') {
-      // Check if relative time like "10.23s"
-      // ⚡ Bolt: Fast extraction using substring before casting with unary `+`
-      // because +("10.23s") evaluates to NaN, whereas parseFloat("10.23s") parses it correctly.
-      // Additionally, charCodeAt/index checking is ~6x faster than endsWith() in hot loops.
+    } else {
+      const timeStr = fileContent.substring(globalTimeStart, globalTimeEnd);
+      timeValue = timeStr;
+      timeLabel = timeStr;
+
       if (timeValue.charCodeAt(timeValue.length - 1) === 115) { // 's'
          const numericPart = +(timeValue.substring(0, timeValue.length - 1));
          if (!isNaN(numericPart)) {
            timeValue = numericPart;
-           timeLabel = `${timeValue}s`;
+           timeLabel = timeValue + 's';
          }
       }
-      // If it wasn't a valid 's' format or parsing failed, try Date parsing.
+
       if (typeof timeValue === 'string') {
-         let parsedTime = parseISO8601FastPath(timeValue);
+         let parsedTime = parseISO8601FastPath(fileContent, globalTimeStart, globalTimeEnd);
 
          if (isNaN(parsedTime)) {
-             // Fallback for non-ISO-8601 strings
-             // Optimization: Use Date.parse to avoid allocating Invalid Date objects for non-date strings
              parsedTime = Date.parse(timeValue);
          }
 
          if (!isNaN(parsedTime)) {
             timeValue = parsedTime;
 
-            // ⚡ Bolt: Check if it's the exact same second as the last parsed date
-            // to bypass expensive Date object manipulation and string formatting.
             const timeSecond = Math.floor(parsedTime / 1000);
             if (timeSecond === lastParsedTimeSecond) {
               timeLabel = lastTimeSecondLabel;
             } else {
-              // User request: Display time in logging timezone and include the date.
-              // For ISO-8601 like strings (e.g., 2024-05-15T15:23:45.150+0000), extract date and time directly.
               let extractedLabel = false;
               if (timeStr.length >= 19 && timeStr.charCodeAt(4) === 45 && timeStr.charCodeAt(7) === 45) {
                 const sep = timeStr.charCodeAt(10);
@@ -372,7 +353,6 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
               if (!extractedLabel) {
                 reusableDate.setTime(parsedTime);
 
-                // Fallback for non ISO-8601 strings
                 const y = reusableDate.getFullYear();
                 const mo = reusableDate.getMonth() + 1;
                 const d = reusableDate.getDate();
@@ -388,7 +368,6 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
          }
       }
 
-      // Update cache
       lastTimeStr = timeStr;
       lastTimeValue = timeValue;
       lastTimeLabel = timeLabel;
@@ -397,47 +376,63 @@ export function parseLogFile(fileContent: string): { data: LogData[], fullGCTime
     const beforeMB = normalize(beforeVal, beforeUnitCode);
     const afterMB = normalize(afterVal, afterUnitCode);
 
-    if (isGC && (beforeMB === undefined || afterMB === undefined)) {
-      continue;
-    }
+    let hasAnyDataForThisLine = false;
 
-    const logEntry: LogData = {
-      rawTime: timeStr,
-      timeValue,
-      timeLabel,
-    };
+    if (isGC && beforeMB !== undefined && afterMB !== undefined) {
+      const bRounded = Math.round(beforeMB * 100) / 100;
+      const aRounded = Math.round(afterMB * 100) / 100;
 
-    let hasData = false;
+      // ⚡ Bolt: Eliminate object spread and create objects directly.
+      // This reduces object allocations and CPU overhead in hot loops.
+      const gcEntry: LogData = {
+        timeValue,
+        timeLabel,
+        beforeGC: bRounded,
+        afterGC: aRounded
+      };
 
-    if (beforeMB !== undefined && afterMB !== undefined) {
-      // Optimization: Math.round avoids expensive string allocations of toFixed/parseFloat
-      logEntry.beforeGC = Math.round(beforeMB * 100) / 100;
-      logEntry.afterGC = Math.round(afterMB * 100) / 100;
-      hasData = true;
+      if (gcDataIndex >= gcData.length) gcData.length *= 2;
+      gcData[gcDataIndex++] = gcEntry;
+
+      // Update stats
+      if (bRounded > maxMemoryBefore) maxMemoryBefore = bRounded;
+      if (aRounded > maxMemoryAfter) maxMemoryAfter = aRounded;
+      totalRecovered += (bRounded - aRounded);
+      gcCount++;
+      hasAnyDataForThisLine = true;
     }
 
     if (pauseDurationMs !== undefined) {
       const trimmedType = pauseType ? pauseType.trim() : "";
       if (trimmedType !== "" && trimmedType !== "Pause") {
-        logEntry.pauseTime = pauseDurationMs;
-        logEntry.pauseType = pauseType;
-        hasData = true;
+        // ⚡ Bolt: Direct object creation instead of spread operator.
+        const pauseEntry: LogData = {
+          timeValue,
+          timeLabel,
+          pauseTime: pauseDurationMs,
+          pauseType: trimmedType
+        };
+
+        if (pauseDataIndex >= pauseData.length) pauseData.length *= 2;
+        pauseData[pauseDataIndex++] = pauseEntry;
+        hasAnyDataForThisLine = true;
       }
     }
 
-    if (!hasData) {
-      continue;
+    if (hasAnyDataForThisLine) {
+        totalParsed++;
     }
-
-    // ⚡ Bolt: Dynamically resize if the estimate wasn't large enough
-    if (dataIndex >= data.length) {
-        data.length *= 2;
-    }
-    data[dataIndex++] = logEntry;
   }
 
-  // ⚡ Bolt: Trim the pre-allocated array down to its actual used size
-  data.length = dataIndex;
+  gcData.length = gcDataIndex;
+  pauseData.length = pauseDataIndex;
 
-  return { data, fullGCTime };
+  const stats: GCStats = {
+      maxMemoryBefore,
+      maxMemoryAfter,
+      avgRecovered: gcCount > 0 ? (totalRecovered / gcCount).toFixed(2) : 0,
+      totalParsed
+  };
+
+  return { gcData, pauseData, stats, fullGCTime };
 }
