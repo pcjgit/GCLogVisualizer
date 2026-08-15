@@ -112,9 +112,7 @@ export function parseLogFile(fileContent: string): ParseResult {
   let lastParsedTimeSecond = -1;
   let lastTimeSecondLabel = "";
 
-  const isShenandoah = fileContent.length > 5242880
-    ? fileContent.substring(0, 5242880).indexOf('Concurrent cleanup') !== -1
-    : fileContent.indexOf('Concurrent cleanup') !== -1;
+  const isShenandoah = fileContent.lastIndexOf('Concurrent cleanup', 5242880) !== -1;
 
   // ⚡ Bolt: If it's Shenandoah, we only care about memory transitions on "Concurrent cleanup" lines.
   // By searching for the keyword directly instead of generic "->", we skip thousands of irrelevant
@@ -206,7 +204,7 @@ export function parseLogFile(fileContent: string): ParseResult {
       continue;
     }
 
-    const firstBracketIndex = line.indexOf('[');
+    const firstBracketIndex = line.charCodeAt(0) === 91 ? 0 : line.indexOf('[');
     const closingBracketIndex = line.indexOf(']', firstBracketIndex);
     if (firstBracketIndex === -1 || closingBracketIndex === -1) {
       continue;
@@ -294,7 +292,7 @@ export function parseLogFile(fileContent: string): ParseResult {
          const numericPart = +(timeValue.substring(0, timeValue.length - 1));
          if (!isNaN(numericPart)) {
            timeValue = numericPart;
-           timeLabel = `${timeValue}s`;
+           timeLabel = timeValue + 's';
          }
       }
 

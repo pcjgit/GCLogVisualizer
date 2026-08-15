@@ -99,3 +99,6 @@ Optimized downsampling loops by substituting double array passes with single Int
 ## 2026-06-19 - [Object Creation Optimization in Hot Loops]
 **Learning:** In V8, using the object spread operator (`...`) in extremely hot loops significantly increases GC churn and CPU overhead due to intermediate object allocations. Direct property initialization is significantly faster and more predictable for the JIT compiler.
 **Action:** Replace object spread with direct property initialization in high-frequency parsing loops to reduce memory pressure.
+## 2025-05-15 - [Maintainability over Micro-optimization in Hot Loops]
+**Learning:** Attempting to bypass a redundant `indexOf` search by reusing a keyword index from a higher-level search can be perceived as high-risk and "incomplete" by reviewers if the logic branches are complex (e.g., handling multiple GC formats). The performance gain of skipping one `indexOf` on a short string is negligible compared to the risk of breaking parsing logic for less-tested log formats.
+**Action:** Prioritize 100% correctness and readability for data extraction delimiters. Only optimize redundant searches if they are on very large strings or are measurably impactful.
