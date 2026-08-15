@@ -175,13 +175,42 @@ export function parseLogFile(fileContent: string): ParseResult {
           const date = timeStr.substring(0, tIndex);
           let tz = '';
           let time = '';
-          const tzMatch = timeStr.substring(tIndex + 1).match(/([+-]\d{4}|Z)$/);
-          if (tzMatch) {
-            tz = tzMatch[1];
-            time = timeStr.substring(tIndex + 1, timeStr.length - tz.length);
+
+          // ⚡ Bolt: Replace Regex with fast string extraction for timezone suffix.
+          // Avoiding .match() and regex compilation for this simple suffix check
+          // provides a significant speedup in parsing time.
+          const timeStrLen = timeStr.length;
+          const lastChar = timeStr.charCodeAt(timeStrLen - 1);
+          let tzLen = 0;
+
+          if (lastChar === 90) { // 'Z'
+            tzLen = 1;
+          } else if (timeStrLen >= tIndex + 1 + 5) {
+            const tzSign = timeStr.charCodeAt(timeStrLen - 5);
+            if (tzSign === 43 || tzSign === 45) { // '+' or '-'
+              const c1 = timeStr.charCodeAt(timeStrLen - 4);
+              const c2 = timeStr.charCodeAt(timeStrLen - 3);
+              const c3 = timeStr.charCodeAt(timeStrLen - 2);
+              const c4 = lastChar;
+              // Ensure strict digit validation
+              if (
+                c1 >= 48 && c1 <= 57 &&
+                c2 >= 48 && c2 <= 57 &&
+                c3 >= 48 && c3 <= 57 &&
+                c4 >= 48 && c4 <= 57
+              ) {
+                tzLen = 5;
+              }
+            }
+          }
+
+          if (tzLen > 0) {
+            tz = timeStr.substring(timeStrLen - tzLen);
+            time = timeStr.substring(tIndex + 1, timeStrLen - tzLen);
           } else {
             time = timeStr.substring(tIndex + 1);
           }
+
           fullGCTime = { date, time, tz };
         } else {
           fullGCTime = timeStr;
