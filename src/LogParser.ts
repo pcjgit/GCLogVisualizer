@@ -32,12 +32,12 @@ const normalize = (val: number | undefined, unitCode: number | undefined) => {
   return val; // Assume M by default or no unit
 };
 
-// ⚡ Bolt: Fast-path for ISO-8601 like: 2024-05-15T15:23:45.150+0000
-// Avoids expensive Date.parse() for the most common JVM log format.
+// ⚡ Bolt: Fast-path for ISO-8601 like: 2024-05-15T15:23:45.150+0000, 2024-05-15T15:23:45.150Z, 2024-05-15T15:23:45.150+00:00
+// Avoids expensive Date.parse() for common JVM log formats (including 'Z' and coloned timezones).
 // Optimized to accept (str, start, end) to bypass intermediate substring allocations.
 const parseISO8601FastPath = (str: string, start: number, end: number): number => {
   const length = end - start;
-  if (length >= 23 && str.charCodeAt(start + 4) === 45 && str.charCodeAt(start + 7) === 45) {
+  if (length >= 19 && str.charCodeAt(start + 4) === 45 && str.charCodeAt(start + 7) === 45) {
     const sep = str.charCodeAt(start + 10);
     if (sep === 84 || sep === 32) { // 'T' or ' '
       const year = (str.charCodeAt(start + 0) - 48) * 1000 +
@@ -56,28 +56,44 @@ const parseISO8601FastPath = (str: string, start: number, end: number): number =
                      (str.charCodeAt(start + 18) - 48);
 
       let ms = 0;
-      let tzOffsetMs = 0;
       let i = 19;
 
-      if (str.charCodeAt(start + i) === 46) { // '.'
-         ms = (str.charCodeAt(start + 20) - 48) * 100 +
-              (str.charCodeAt(start + 21) - 48) * 10 +
-              (str.charCodeAt(start + 22) - 48);
-         i = 23;
+      if (i < length && str.charCodeAt(start + i) === 46) { // '.'
+         if (length >= i + 4) {
+           ms = (str.charCodeAt(start + i + 1) - 48) * 100 +
+                (str.charCodeAt(start + i + 2) - 48) * 10 +
+                (str.charCodeAt(start + i + 3) - 48);
+           i += 4;
+         }
+      }
+
+      if (i >= length) {
+        return Date.UTC(year, month, day, hour, minute, second, ms);
       }
 
       const tzSign = str.charCodeAt(start + i);
-      if (tzSign === 43 || tzSign === 45) { // '+' or '-'
-         // Verify timezone is in +HHMM / -HHMM format without colon
-         if (length >= i + 5 && str.charCodeAt(start + i + 3) !== 58) { // 58 is ':'
+      if (tzSign === 90) { // 'Z'
+        return Date.UTC(year, month, day, hour, minute, second, ms);
+      } else if (tzSign === 43 || tzSign === 45) { // '+' or '-'
+         if (length >= i + 5 && str.charCodeAt(start + i + 3) !== 58) { // +HHMM
              const tzHour = (str.charCodeAt(start + i + 1) - 48) * 10 +
                             (str.charCodeAt(start + i + 2) - 48);
              const tzMin = (str.charCodeAt(start + i + 3) - 48) * 10 +
                            (str.charCodeAt(start + i + 4) - 48);
-             tzOffsetMs = (tzHour * 60 + tzMin) * 60000;
+             const tzOffsetMs = (tzHour * 60 + tzMin) * 60000;
              let parsedTime = Date.UTC(year, month, day, hour, minute, second, ms);
              if (tzSign === 43) parsedTime -= tzOffsetMs;
-             else if (tzSign === 45) parsedTime += tzOffsetMs;
+             else parsedTime += tzOffsetMs;
+             return parsedTime;
+         } else if (length >= i + 6 && str.charCodeAt(start + i + 3) === 58) { // +HH:MM
+             const tzHour = (str.charCodeAt(start + i + 1) - 48) * 10 +
+                            (str.charCodeAt(start + i + 2) - 48);
+             const tzMin = (str.charCodeAt(start + i + 4) - 48) * 10 +
+                           (str.charCodeAt(start + i + 5) - 48);
+             const tzOffsetMs = (tzHour * 60 + tzMin) * 60000;
+             let parsedTime = Date.UTC(year, month, day, hour, minute, second, ms);
+             if (tzSign === 43) parsedTime -= tzOffsetMs;
+             else parsedTime += tzOffsetMs;
              return parsedTime;
          }
       }
