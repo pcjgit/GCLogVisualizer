@@ -32,12 +32,12 @@ const normalize = (val: number | undefined, unitCode: number | undefined) => {
   return val; // Assume M by default or no unit
 };
 
-// ⚡ Bolt: Fast-path for ISO-8601 like: 2024-05-15T15:23:45.150+0000
-// Avoids expensive Date.parse() for the most common JVM log format.
-// Optimized to accept (str, start, end) to bypass intermediate substring allocations.
+// ⚡ Bolt: Fast-path for ISO-8601 like: 2024-05-15T15:23:45.150+0000, +00:00, or Z
+// Avoids expensive Date.parse() for standard JVM log ISO-8601 formats.
+// Accepts (str, start, end) to bypass intermediate substring allocations.
 const parseISO8601FastPath = (str: string, start: number, end: number): number => {
   const length = end - start;
-  if (length >= 23 && str.charCodeAt(start + 4) === 45 && str.charCodeAt(start + 7) === 45) {
+  if (length >= 19 && str.charCodeAt(start + 4) === 45 && str.charCodeAt(start + 7) === 45) {
     const sep = str.charCodeAt(start + 10);
     if (sep === 84 || sep === 32) { // 'T' or ' '
       const year = (str.charCodeAt(start + 0) - 48) * 1000 +
@@ -56,30 +56,58 @@ const parseISO8601FastPath = (str: string, start: number, end: number): number =
                      (str.charCodeAt(start + 18) - 48);
 
       let ms = 0;
-      let tzOffsetMs = 0;
       let i = 19;
 
-      if (str.charCodeAt(start + i) === 46) { // '.'
+      if (length >= 23 && str.charCodeAt(start + 19) === 46) { // '.'
          ms = (str.charCodeAt(start + 20) - 48) * 100 +
               (str.charCodeAt(start + 21) - 48) * 10 +
               (str.charCodeAt(start + 22) - 48);
          i = 23;
       }
 
+      if (i >= length) {
+        return Date.UTC(year, month, day, hour, minute, second, ms);
+      }
+
       const tzSign = str.charCodeAt(start + i);
+      if (tzSign === 90) { // 'Z'
+        return Date.UTC(year, month, day, hour, minute, second, ms);
+      }
+
       if (tzSign === 43 || tzSign === 45) { // '+' or '-'
-         // Verify timezone is in +HHMM / -HHMM format without colon
-         if (length >= i + 5 && str.charCodeAt(start + i + 3) !== 58) { // 58 is ':'
-             const tzHour = (str.charCodeAt(start + i + 1) - 48) * 10 +
-                            (str.charCodeAt(start + i + 2) - 48);
-             const tzMin = (str.charCodeAt(start + i + 3) - 48) * 10 +
-                           (str.charCodeAt(start + i + 4) - 48);
-             tzOffsetMs = (tzHour * 60 + tzMin) * 60000;
-             let parsedTime = Date.UTC(year, month, day, hour, minute, second, ms);
-             if (tzSign === 43) parsedTime -= tzOffsetMs;
-             else if (tzSign === 45) parsedTime += tzOffsetMs;
-             return parsedTime;
+         let tzHour = 0;
+         let tzMin = 0;
+         if (length >= i + 6 && str.charCodeAt(start + i + 3) === 58) { // +HH:MM / -HH:MM
+             const h1 = str.charCodeAt(start + i + 1);
+             const h2 = str.charCodeAt(start + i + 2);
+             const m1 = str.charCodeAt(start + i + 4);
+             const m2 = str.charCodeAt(start + i + 5);
+             if (h1 >= 48 && h1 <= 57 && h2 >= 48 && h2 <= 57 && m1 >= 48 && m1 <= 57 && m2 >= 48 && m2 <= 57) {
+               tzHour = (h1 - 48) * 10 + (h2 - 48);
+               tzMin = (m1 - 48) * 10 + (m2 - 48);
+             } else {
+               return NaN;
+             }
+         } else if (length >= i + 5 && str.charCodeAt(start + i + 3) !== 58) { // +HHMM / -HHMM
+             const h1 = str.charCodeAt(start + i + 1);
+             const h2 = str.charCodeAt(start + i + 2);
+             const m1 = str.charCodeAt(start + i + 3);
+             const m2 = str.charCodeAt(start + i + 4);
+             if (h1 >= 48 && h1 <= 57 && h2 >= 48 && h2 <= 57 && m1 >= 48 && m1 <= 57 && m2 >= 48 && m2 <= 57) {
+               tzHour = (h1 - 48) * 10 + (h2 - 48);
+               tzMin = (m1 - 48) * 10 + (m2 - 48);
+             } else {
+               return NaN;
+             }
+         } else {
+             return NaN;
          }
+
+         const tzOffsetMs = (tzHour * 60 + tzMin) * 60000;
+         let parsedTime = Date.UTC(year, month, day, hour, minute, second, ms);
+         if (tzSign === 43) parsedTime -= tzOffsetMs;
+         else if (tzSign === 45) parsedTime += tzOffsetMs;
+         return parsedTime;
       }
     }
   }
@@ -240,8 +268,8 @@ export function parseLogFile(fileContent: string): ParseResult {
     }
 
     if (isGC) {
-      // Find the actual arrow if we used a keyword search
-      const arrowIndex = line.indexOf('->', gcKeywordIndex);
+      // ⚡ Bolt: If not Shenandoah, gcKeyword is already '->', so gcKeywordIndex is the arrowIndex
+      const arrowIndex = isShenandoah ? line.indexOf('->', gcKeywordIndex) : gcKeywordIndex;
       if (arrowIndex !== -1) {
         const spaceBeforeIndex = line.lastIndexOf(' ', arrowIndex - 1);
         const beforeStart = spaceBeforeIndex === -1 ? 0 : spaceBeforeIndex + 1;
@@ -342,10 +370,12 @@ export function parseLogFile(fileContent: string): ParseResult {
               let extractedLabel = false;
               if (timeStr.length >= 19 && timeStr.charCodeAt(4) === 45 && timeStr.charCodeAt(7) === 45) {
                 const sep = timeStr.charCodeAt(10);
-                if (sep === 84 || sep === 32) { // 'T' or ' '
-                  const datePart = timeStr.substring(0, 10);
-                  const timePart = timeStr.substring(11, 19);
-                  timeLabel = `${datePart} ${timePart}`;
+                if (sep === 84) { // 'T'
+                  // ⚡ Bolt: Direct string concatenation avoids intermediate datePart/timePart allocations
+                  timeLabel = timeStr.substring(0, 10) + ' ' + timeStr.substring(11, 19);
+                  extractedLabel = true;
+                } else if (sep === 32) { // ' '
+                  timeLabel = timeStr.substring(0, 19);
                   extractedLabel = true;
                 }
               }
